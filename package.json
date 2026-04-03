@@ -1,0 +1,11 @@
+{
+  "name": "gifterra-commerce-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@modelcontextprotocol/sdk": "latest",
+    "@supabase/supabase-js": "latest",
+    "dotenv": "^17.4.0"
+  }
+}
