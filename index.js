@@ -12,6 +12,9 @@ import verifyTrustScore from './tools/verifyTrustScore.js';
 import submitBid from './tools/submitBid.js';
 import respondToOffer from './tools/respondToOffer.js';
 import setRateCard from './tools/setRateCard.js';
+import listProduct from './tools/listProduct.js';
+import purchase from './tools/purchase.js';
+import confirmDelivery from './tools/confirmDelivery.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
@@ -192,6 +195,55 @@ server.tool(
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
     };
+  }
+);
+
+// Tool 11: list_product
+server.tool(
+  'list_product',
+  '売り手が商品を出品する（固定価格）',
+  {
+    seller_wallet: z.string().describe('売り手のウォレットアドレス'),
+    name: z.string().describe('商品名'),
+    description: z.string().optional().describe('商品説明'),
+    price: z.number().int().positive().describe('価格（JPYC）'),
+    category: z.enum(['digital', 'physical', 'nft']).optional().describe('カテゴリ（デフォルト: digital）'),
+    stock: z.number().int().optional().describe('在庫数（デフォルト: 1、-1で無限）'),
+    metadata: z.record(z.any()).optional().describe('追加情報（画像URL等）'),
+  },
+  async (args) => {
+    const result = await listProduct(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 12: purchase
+server.tool(
+  'purchase',
+  '買い手が商品を購入する。JPYCをエスクローに預託し、受取確認後に売り手へリリース',
+  {
+    product_id: z.string().describe('購入する商品ID'),
+    buyer_wallet: z.string().describe('買い手のウォレットアドレス'),
+  },
+  async (args) => {
+    const result = await purchase(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 13: confirm_delivery
+server.tool(
+  'confirm_delivery',
+  '買い手が商品の受取を確認し、エスクローから売り手にJPYCをリリースする。双方の信頼スコアを更新',
+  {
+    order_id: z.string().describe('注文ID'),
+    buyer_wallet: z.string().describe('買い手のウォレットアドレス（本人確認）'),
+    seller_sentiment: z.number().min(0).max(1).optional().describe('買い手→売り手の評価（0.0〜1.0）'),
+    buyer_sentiment: z.number().min(0).max(1).optional().describe('売り手→買い手の評価（0.0〜1.0）'),
+  },
+  async (args) => {
+    const result = await confirmDelivery(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );
 
