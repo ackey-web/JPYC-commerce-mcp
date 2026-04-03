@@ -15,6 +15,7 @@ import setRateCard from './tools/setRateCard.js';
 import listProduct from './tools/listProduct.js';
 import purchase from './tools/purchase.js';
 import confirmDelivery from './tools/confirmDelivery.js';
+import reportTxHash from './tools/reportTxHash.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
@@ -243,6 +244,22 @@ server.tool(
   },
   async (args) => {
     const result = await confirmDelivery(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 14: report_tx_hash
+server.tool(
+  'report_tx_hash',
+  'エージェントがトランザクション実行後に結果（tx_hash）を報告する。execute_paymentやpurchaseの後に呼ぶ',
+  {
+    payment_id: z.string().optional().describe('タスク送金のpayment_id'),
+    order_id: z.string().optional().describe('商品売買のorder_id'),
+    type: z.enum(['escrow', 'release']).optional().describe('order_idの場合: escrow（エスクロー送金）or release（解放）'),
+    tx_hash: z.string().describe('送信済みトランザクションのハッシュ（0x + 64hex）'),
+  },
+  async (args) => {
+    const result = await reportTxHash(args);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );
