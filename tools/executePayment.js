@@ -49,10 +49,14 @@ export default async function handler({ negotiation_id, from_wallet, to_wallet }
   const relayerKey = process.env.RELAYER_PRIVATE_KEY;
   const rpcUrl = process.env.POLYGON_RPC_URL || process.env.VITE_ALCHEMY_RPC_URL || 'https://polygon-rpc.com';
 
+  // 正規Ethereumアドレスかチェック（0x + 40hex）
+  const isValidAddress = (addr) => /^0x[0-9a-fA-F]{40}$/.test(addr);
+  const canGoLive = relayerKey && isValidAddress(from_wallet) && isValidAddress(to_wallet);
+
   let tx_hash;
   let autoApproved = false;
 
-  if (relayerKey) {
+  if (canGoLive) {
     // === 本番モード: Polygon上でJPYC送金 ===
     const { ethers } = await import('ethers');
     const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
@@ -131,6 +135,6 @@ export default async function handler({ negotiation_id, from_wallet, to_wallet }
     payment_id: payment.id,
     tx_hash,
     amount,
-    mode: relayerKey ? 'live' : 'mock',
+    mode: canGoLive ? 'live' : 'mock',
   };
 }

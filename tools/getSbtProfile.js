@@ -10,7 +10,7 @@ export default async function handler({ wallet_address }) {
   // 既存レコードを検索
   const { data, error } = await supabase
     .from('mcp_agents')
-    .select('id, trust_score, completion_count, total_task_count, smoothed_rate, active_months, avg_sentiment, sentiment_count')
+    .select('id, trust_score, completion_count, total_task_count, smoothed_rate, active_months, avg_sentiment, sentiment_count, seller_score, seller_completion_count, buyer_score, buyer_completion_count')
     .eq('wallet_address', normalized)
     .maybeSingle();
 
@@ -35,7 +35,7 @@ export default async function handler({ wallet_address }) {
       avg_sentiment: 0.5,
       sentiment_count: 0,
     })
-    .select('id, trust_score, completion_count, total_task_count, smoothed_rate, active_months, avg_sentiment, sentiment_count')
+    .select('id, trust_score, completion_count, total_task_count, smoothed_rate, active_months, avg_sentiment, sentiment_count, seller_score, seller_completion_count, buyer_score, buyer_completion_count')
     .single();
 
   if (insertError) {

@@ -66,9 +66,11 @@ export default async function handler({ product_id, buyer_wallet }) {
   // エスクロー送金（JPYC）
   const relayerKey = process.env.RELAYER_PRIVATE_KEY;
   const escrowAddress = process.env.ESCROW_WALLET_ADDRESS;
+  const isValidAddress = (addr) => /^0x[0-9a-fA-F]{40}$/.test(addr);
+  const canGoLive = relayerKey && escrowAddress && isValidAddress(normalized);
   let escrowTxHash;
 
-  if (relayerKey && escrowAddress) {
+  if (canGoLive) {
     // 本番モード: エスクローウォレットに送金
     const { ethers } = await import('ethers');
     const rpcUrl = process.env.VITE_ALCHEMY_RPC_URL || process.env.POLYGON_RPC_URL;
@@ -159,7 +161,7 @@ export default async function handler({ product_id, buyer_wallet }) {
     seller_score: seller?.seller_score ?? 0,
     escrow_tx_hash: escrowTxHash,
     status: 'escrowed',
-    mode: relayerKey ? 'live' : 'mock',
+    mode: canGoLive ? 'live' : 'mock',
     message: `「${product.name}」を ${product.price} JPYC で購入。エスクローに預託済み。売り手の発送を待っています`,
   };
 }

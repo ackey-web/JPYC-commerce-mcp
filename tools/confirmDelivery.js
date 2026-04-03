@@ -37,9 +37,11 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
   // エスクロー解放: 売り手に送金
   const relayerKey = process.env.RELAYER_PRIVATE_KEY;
   const escrowAddress = process.env.ESCROW_WALLET_ADDRESS;
+  const isValidAddress = (addr) => /^0x[0-9a-fA-F]{40}$/.test(addr);
+  const canGoLive = relayerKey && escrowAddress && isValidAddress(order.seller_wallet);
   let releaseTxHash;
 
-  if (relayerKey && escrowAddress) {
+  if (canGoLive) {
     const { ethers } = await import('ethers');
     const rpcUrl = process.env.VITE_ALCHEMY_RPC_URL || process.env.POLYGON_RPC_URL;
     const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
