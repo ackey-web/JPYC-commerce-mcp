@@ -10,6 +10,15 @@ A Model Context Protocol (MCP) server for AI agent commerce — task evaluation,
 - **Auto-Payment** — Trust score-gated automatic JPYC transfers with daily limits
 - **Human-in-the-Loop** — Fallback to manual approval when auto-payment conditions aren't met
 
+## Use Cases
+
+| Scenario | Description | Guide |
+|----------|-------------|-------|
+| **Agent-to-Agent** | AI agents autonomously delegate tasks and pay each other | [docs/use-case-agent-to-agent.md](docs/use-case-agent-to-agent.md) |
+| **DAO / Community** | Transparent, trust-based contributor payments for DAOs | [docs/use-case-dao.md](docs/use-case-dao.md) |
+| **Platform Integration** | Add reputation + payment layer to your SaaS | [docs/use-case-platform.md](docs/use-case-platform.md) |
+| **Demo Walkthrough** | Step-by-step guide to run and understand the demo | [docs/demo-walkthrough.md](docs/demo-walkthrough.md) |
+
 ## Architecture
 
 ```
