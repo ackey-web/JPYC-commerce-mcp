@@ -21,15 +21,15 @@ const REGISTRY_ABI = [
 
 async function main() {
   const registryAddress = process.env.TRUST_SCORE_REGISTRY_ADDRESS;
-  const relayerKey = process.env.RELAYER_PRIVATE_KEY;
-  const rpcUrl = process.env.POLYGON_RPC_URL || process.env.VITE_ALCHEMY_RPC_URL;
+  const signerKey = process.env.PRIVATE_KEY || process.env.RELAYER_PRIVATE_KEY;
+  const rpcUrl = process.env.VITE_ALCHEMY_RPC_URL || process.env.POLYGON_RPC_URL;
 
   if (!registryAddress) {
     console.error('TRUST_SCORE_REGISTRY_ADDRESS が未設定です');
     process.exit(1);
   }
-  if (!relayerKey) {
-    console.error('RELAYER_PRIVATE_KEY が未設定です');
+  if (!signerKey) {
+    console.error('PRIVATE_KEY または RELAYER_PRIVATE_KEY が未設定です');
     process.exit(1);
   }
 
@@ -66,7 +66,7 @@ async function main() {
   // オンチェーンにコミット
   const { ethers } = await import('ethers');
   const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-  const wallet = new ethers.Wallet(relayerKey, provider);
+  const wallet = new ethers.Wallet(signerKey, provider);
   const registry = new ethers.Contract(registryAddress, REGISTRY_ABI, wallet);
 
   const currentEpoch = await registry.currentEpoch();
@@ -75,7 +75,7 @@ async function main() {
   const tx = await registry.commitRoot(root, agents.length, {
     maxFeePerGas: ethers.utils.parseUnits('200', 'gwei'),
     maxPriorityFeePerGas: ethers.utils.parseUnits('50', 'gwei'),
-    gasLimit: 100000,
+    gasLimit: 300000,
   });
 
   console.log(`TX送信: ${tx.hash}`);
