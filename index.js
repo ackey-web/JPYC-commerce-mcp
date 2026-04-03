@@ -11,6 +11,7 @@ import updateAgentRecord from './tools/updateSbtRecord.js';
 import verifyTrustScore from './tools/verifyTrustScore.js';
 import submitBid from './tools/submitBid.js';
 import respondToOffer from './tools/respondToOffer.js';
+import setRateCard from './tools/setRateCard.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
@@ -166,6 +167,28 @@ server.tool(
   },
   async (args) => {
     const result = await respondToOffer(args);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// Tool 10: set_rate_card
+server.tool(
+  'set_rate_card',
+  'エージェントオーナー（人間）がスキル別の希望単価と入札上限を事前設定する。エージェントはこの範囲内でしか入札できない',
+  {
+    agent_wallet: z.string().describe('設定対象のエージェントウォレットアドレス'),
+    rates: z.array(z.object({
+      skill: z.string().describe('スキル名（例: Solidity, React）'),
+      rate_per_task: z.number().int().positive().describe('1タスクあたりの希望単価（JPYC）'),
+      min_acceptable: z.number().int().positive().optional().describe('これ以下の提案は自動拒否の参考値（JPYC）'),
+    })).describe('スキル別料金の配列'),
+    auto_bid_enabled: z.boolean().optional().describe('rate_cardに基づく自動入札を有効にするか'),
+    max_bid_amount: z.number().int().positive().optional().describe('1回の入札の上限額（JPYC）。デフォルト1000'),
+  },
+  async (args) => {
+    const result = await setRateCard(args);
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
     };
