@@ -8,10 +8,11 @@ import proposeNegotiation from './tools/proposeNegotiation.js';
 import requestHumanApproval from './tools/requestHumanApproval.js';
 import executePayment from './tools/executePayment.js';
 import updateAgentRecord from './tools/updateSbtRecord.js';
+import verifyTrustScore from './tools/verifyTrustScore.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
-  version: '2.0.0',
+  version: '3.0.0',
 });
 
 // Tool 1: get_sbt_profile
@@ -111,6 +112,21 @@ server.tool(
   },
   async (args) => {
     const result = await updateAgentRecord(args);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// Tool 7: verify_trust_score
+server.tool(
+  'verify_trust_score',
+  'エージェントの信頼スコアをオンチェーンMerkle Rootで検証する',
+  {
+    wallet_address: z.string().describe('検証対象のウォレットアドレス'),
+  },
+  async (args) => {
+    const result = await verifyTrustScore(args);
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
     };
