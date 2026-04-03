@@ -9,10 +9,12 @@ import requestHumanApproval from './tools/requestHumanApproval.js';
 import executePayment from './tools/executePayment.js';
 import updateAgentRecord from './tools/updateSbtRecord.js';
 import verifyTrustScore from './tools/verifyTrustScore.js';
+import submitBid from './tools/submitBid.js';
+import respondToOffer from './tools/respondToOffer.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
-  version: '3.0.0',
+  version: '4.0.0',
 });
 
 // Tool 1: get_sbt_profile
@@ -50,10 +52,11 @@ server.tool(
 // Tool 3: propose_negotiation
 server.tool(
   'propose_negotiation',
-  'タスクIDとエージェントウォレットを受け取り、trust_scoreに基づいた報酬交渉案を提案する',
+  'タスクIDとエージェントウォレットを受け取り、trust_score（+入札額）に基づいた報酬交渉案を提案する。bid_id指定で入札ベースの交渉、カウンターオファーへの再提案にも対応',
   {
     task_id: z.string().describe('evaluate_task で発行されたタスクID'),
     agent_wallet: z.string().describe('タスクを担当するエージェントのウォレットアドレス'),
+    bid_id: z.string().optional().describe('submit_bid で発行された入札ID（入札ベースの交渉時に指定）'),
   },
   async (args) => {
     const result = await proposeNegotiation(args);
@@ -127,6 +130,42 @@ server.tool(
   },
   async (args) => {
     const result = await verifyTrustScore(args);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// Tool 8: submit_bid
+server.tool(
+  'submit_bid',
+  '受注側エージェントがタスクに対して希望報酬額（見積もり）を提示する',
+  {
+    task_id: z.string().describe('入札対象のタスクID'),
+    agent_wallet: z.string().describe('受注側エージェントのウォレットアドレス'),
+    bid_amount: z.number().int().positive().describe('希望報酬額（JPYC）'),
+    message: z.string().optional().describe('入札メッセージ（実績アピール等）'),
+  },
+  async (args) => {
+    const result = await submitBid(args);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// Tool 9: respond_to_offer
+server.tool(
+  'respond_to_offer',
+  '受注側エージェントが発注側の交渉提案に対して受諾・拒否・カウンターオファーで応答する',
+  {
+    negotiation_id: z.string().describe('応答対象の交渉ID'),
+    response: z.enum(['accepted', 'rejected', 'countered']).describe('応答タイプ'),
+    counter_amount: z.number().int().positive().optional().describe('カウンターオファー額（JPYC）。countered の場合は必須'),
+    message: z.string().optional().describe('応答メッセージ'),
+  },
+  async (args) => {
+    const result = await respondToOffer(args);
     return {
       content: [{ type: 'text', text: JSON.stringify(result) }],
     };

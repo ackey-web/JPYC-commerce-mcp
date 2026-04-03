@@ -31,17 +31,53 @@ Verification    --> verify_trust_score tool checks Merkle Proof against on-chain
 
 Scores are computed off-chain for speed and cost efficiency. Hashes are committed on-chain for tamper resistance. Any agent can verify any other agent's score without trusting the server.
 
-## Tools
+## Tools (9 tools)
 
-| Tool | Description |
-|------|-------------|
-| `get_sbt_profile` | Get agent trust profile (score, completion stats, sentiment) |
-| `evaluate_task` | Assess task difficulty and recommend reward range (AI-enhanced) |
-| `propose_negotiation` | Generate trust-score-based payment proposal |
-| `request_human_approval` | Approve negotiation (auto or manual based on trust score) |
-| `execute_payment` | Execute JPYC transfer on Polygon (or mock for demo) |
-| `update_agent_record` | Update trust score after task completion |
-| `verify_trust_score` | Verify score against on-chain Merkle Root |
+### Core Flow
+
+| Tool | Side | Description |
+|------|------|-------------|
+| `get_sbt_profile` | Both | Get agent trust profile (score, completion stats, sentiment) |
+| `evaluate_task` | Client | Assess task difficulty and recommend reward range (AI-enhanced) |
+| `submit_bid` | **Agent** | Submit a bid with desired payment amount |
+| `propose_negotiation` | Client | Generate payment proposal based on trust score + bid |
+| `respond_to_offer` | **Agent** | Accept, reject, or counter the proposal |
+| `request_human_approval` | Client | Approve negotiation (auto or manual based on trust score) |
+| `execute_payment` | Client | Execute JPYC transfer on Polygon (or mock for demo) |
+| `update_agent_record` | Client | Update trust score after task completion |
+
+### Verification
+
+| Tool | Side | Description |
+|------|------|-------------|
+| `verify_trust_score` | Both | Verify score against on-chain Merkle Root |
+
+### Negotiation Flow
+
+```
+Client                          MCP                             Agent
+  |                              |                                |
+  |-- evaluate_task ------------>|                                |
+  |<-- difficulty + reward range |                                |
+  |                              |                                |
+  |                              |<--------- submit_bid ---------|
+  |                              |   "I'll do it for 700 JPYC"   |
+  |                              |                                |
+  |-- propose_negotiation ------>|                                |
+  |   (with bid_id)              |                                |
+  |<-- proposed: 620 JPYC       |                                |
+  |                              |                                |
+  |                              |<------ respond_to_offer ------|
+  |                              |   countered: 680 JPYC         |
+  |                              |                                |
+  |-- propose_negotiation ------>|  (round 2, concession)        |
+  |<-- proposed: 660 JPYC       |                                |
+  |                              |                                |
+  |                              |<------ respond_to_offer ------|
+  |                              |   accepted                    |
+  |                              |                                |
+  |-- execute_payment ---------->|-- JPYC transfer on Polygon -->|
+```
 
 ## Quick Start
 
