@@ -7,6 +7,8 @@ A Model Context Protocol (MCP) server for AI agent commerce — task evaluation,
 - **Trust Score System** — Multi-axis agent reputation (volume x reliability x longevity x reputation x failure decay)
 - **On-Chain Verification** — Merkle Root committed to Polygon; any agent can verify scores with Merkle Proof
 - **AI-Enhanced Task Evaluation** — Claude API analyzes task complexity with skill-weighted scoring
+- **Human-Controlled Pricing** — Owners set rate cards; agents cannot bid outside pre-approved ranges
+- **Bidirectional Negotiation** — Agents bid, clients counter, multi-round concession until agreement
 - **Auto-Payment** — Trust score-gated automatic JPYC transfers with daily limits
 - **Human-in-the-Loop** — Fallback to manual approval when auto-payment conditions aren't met
 
@@ -22,16 +24,21 @@ A Model Context Protocol (MCP) server for AI agent commerce — task evaluation,
 ## Architecture
 
 ```
-Task completed --> Supabase (off-chain, instant update)
-                       |
-Periodic batch  --> Merkle Root committed to Polygon (on-chain, tamper-proof)
-                       |
-Verification    --> verify_trust_score tool checks Merkle Proof against on-chain root
+Human owner sets rate card --> Agent bids within limits --> Negotiation --> Payment
+
+Trust scores:
+  Off-chain (Supabase)  -->  Merkle Root on Polygon  -->  Verifiable by anyone
 ```
 
-Scores are computed off-chain for speed and cost efficiency. Hashes are committed on-chain for tamper resistance. Any agent can verify any other agent's score without trusting the server.
+Only the **client (task creator)** needs to install this MCP. Agents just need a wallet to receive JPYC.
 
-## Tools (9 tools)
+## Tools (10 tools)
+
+### Setup (Human / Owner)
+
+| Tool | Description |
+|------|-------------|
+| `set_rate_card` | **Owner** pre-sets skill-based rates and bid limits. Agents cannot exceed these. |
 
 ### Core Flow
 
@@ -39,9 +46,9 @@ Scores are computed off-chain for speed and cost efficiency. Hashes are committe
 |------|------|-------------|
 | `get_sbt_profile` | Both | Get agent trust profile (score, completion stats, sentiment) |
 | `evaluate_task` | Client | Assess task difficulty and recommend reward range (AI-enhanced) |
-| `submit_bid` | **Agent** | Submit a bid with desired payment amount |
+| `submit_bid` | Agent | Bid on a task (auto-calculated from rate card, or manual within limits) |
 | `propose_negotiation` | Client | Generate payment proposal based on trust score + bid |
-| `respond_to_offer` | **Agent** | Accept, reject, or counter the proposal |
+| `respond_to_offer` | Agent | Accept, reject, or counter the proposal |
 | `request_human_approval` | Client | Approve negotiation (auto or manual based on trust score) |
 | `execute_payment` | Client | Execute JPYC transfer on Polygon (or mock for demo) |
 | `update_agent_record` | Client | Update trust score after task completion |
@@ -52,6 +59,33 @@ Scores are computed off-chain for speed and cost efficiency. Hashes are committe
 |------|------|-------------|
 | `verify_trust_score` | Both | Verify score against on-chain Merkle Root |
 
+### Pricing Safety Model
+
+Agents do NOT decide their own prices. Humans control pricing through rate cards:
+
+```
+Human (Owner)                       Agent
+  |                                   |
+  |-- set_rate_card ----------------->|
+  |   "Solidity: 800, React: 400"    |  <-- Human decides rates
+  |   "max_bid: 1000 JPYC"           |  <-- Human sets ceiling
+  |                                   |
+  |                                   |-- submit_bid (task arrives)
+  |                                   |   rate_card lookup -> 800 JPYC
+  |                                   |   OK (under max_bid)
+  |                                   |
+  |                                   |-- submit_bid (bid: 2000 JPYC)
+  |                                   |   ERROR: exceeds max_bid 1000
+  |                                   |
+  |                                   |-- submit_bid (no rate_card set)
+  |                                   |   ERROR: owner must set rates first
+```
+
+- `rate_per_task`: desired price per skill (highest matching skill = bid amount)
+- `min_acceptable`: reject offers below this (advisory)
+- `max_bid_amount`: hard ceiling on any bid
+- `auto_bid_enabled`: allow rate_card-based automatic bidding
+
 ### Negotiation Flow
 
 ```
@@ -61,22 +95,24 @@ Client                          MCP                             Agent
   |<-- difficulty + reward range |                                |
   |                              |                                |
   |                              |<--------- submit_bid ---------|
-  |                              |   "I'll do it for 700 JPYC"   |
+  |                              |   bid: 800 (from rate_card)    |
   |                              |                                |
   |-- propose_negotiation ------>|                                |
   |   (with bid_id)              |                                |
-  |<-- proposed: 620 JPYC       |                                |
+  |<-- proposed: 680 JPYC       |  (trust_score adjusts amount)  |
   |                              |                                |
   |                              |<------ respond_to_offer ------|
-  |                              |   countered: 680 JPYC         |
+  |                              |   countered: 750 JPYC         |
   |                              |                                |
   |-- propose_negotiation ------>|  (round 2, concession)        |
-  |<-- proposed: 660 JPYC       |                                |
+  |<-- proposed: 720 JPYC       |                                |
   |                              |                                |
   |                              |<------ respond_to_offer ------|
   |                              |   accepted                    |
   |                              |                                |
   |-- execute_payment ---------->|-- JPYC transfer on Polygon -->|
+  |                              |                                |
+  |-- update_agent_record ------>|  trust_score updated           |
 ```
 
 ## Quick Start
@@ -187,9 +223,11 @@ When conditions are not met, falls back to manual human approval.
 
 | Table | Purpose |
 |-------|---------|
-| `mcp_agents` | Agent profiles, trust scores, auto-payment settings |
+| `mcp_agents` | Agent profiles, trust scores, auto-payment/bid settings |
 | `mcp_tasks` | Task evaluations and difficulty scores |
-| `mcp_negotiations` | Payment negotiation history |
+| `mcp_bids` | Agent bids (amount, status, linked to rate card) |
+| `mcp_rate_cards` | Owner-set skill-based pricing (rate + min_acceptable) |
+| `mcp_negotiations` | Multi-round negotiation history |
 | `mcp_payments` | Payment records with tx hashes |
 | `mcp_task_results` | Task outcome history (feeds trust score calculation) |
 | `mcp_trust_snapshots` | Merkle Root commit history |
