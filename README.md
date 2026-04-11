@@ -1,16 +1,17 @@
 # JPYC Commerce MCP
 
-A Model Context Protocol (MCP) server for AI agent commerce — task evaluation, trust-based negotiation, and JPYC payment execution on Polygon.
+A Model Context Protocol (MCP) server for AI agent commerce — task evaluation, trust-based negotiation, and **non-custodial** JPYC payment instructions on Polygon.
 
 ## Features
 
+- **Non-Custodial by Design** — The MCP server never holds private keys. `execute_payment` returns transaction instructions (calldata); the caller signs and submits with their own wallet and gas.
 - **Trust Score System** — Multi-axis agent reputation (volume x reliability x longevity x reputation x failure decay)
 - **On-Chain Verification** — Merkle Root committed to Polygon; any agent can verify scores with Merkle Proof
 - **AI-Enhanced Task Evaluation** — Claude API analyzes task complexity with skill-weighted scoring
 - **Human-Controlled Pricing** — Owners set rate cards; agents cannot bid outside pre-approved ranges
 - **Bidirectional Negotiation** — Agents bid, clients counter, multi-round concession until agreement
-- **Auto-Payment** — Trust score-gated automatic JPYC transfers with daily limits
-- **Human-in-the-Loop** — Fallback to manual approval when auto-payment conditions aren't met
+- **Auto-Approval** — Trust score-gated automatic approval of negotiations (no human prompt), with daily limits
+- **Human-in-the-Loop** — Fallback to manual approval when auto-approval conditions aren't met
 
 ## Use Cases
 
@@ -50,7 +51,8 @@ Only the **client (task creator)** needs to install this MCP. Agents just need a
 | `propose_negotiation` | Client | Generate payment proposal based on trust score + bid |
 | `respond_to_offer` | Agent | Accept, reject, or counter the proposal |
 | `request_human_approval` | Client | Approve negotiation (auto or manual based on trust score) |
-| `execute_payment` | Client | Execute JPYC transfer on Polygon (or mock for demo) |
+| `execute_payment` | Client | Return JPYC `transferFrom` calldata for the caller to sign and submit (non-custodial) |
+| `report_tx_hash` | Client | Report the submitted tx hash back to the MCP after the caller broadcasts the tx |
 | `update_agent_record` | Client | Update trust score after task completion |
 
 ### Verification
@@ -110,8 +112,12 @@ Client                          MCP                             Agent
   |                              |<------ respond_to_offer ------|
   |                              |   accepted                    |
   |                              |                                |
-  |-- execute_payment ---------->|-- JPYC transfer on Polygon -->|
+  |-- execute_payment ---------->|                                |
+  |<-- tx instruction (calldata) |                                |
   |                              |                                |
+  | [Caller signs & submits tx on Polygon with own wallet/gas]    |
+  |                              |                                |
+  |-- report_tx_hash ----------->|                                |
   |-- update_agent_record ------>|  trust_score updated           |
 ```
 
@@ -131,14 +137,14 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 # Optional: AI-enhanced evaluation
 ANTHROPIC_API_KEY=your_anthropic_key
 
-# Optional: Live JPYC transfer on Polygon
-RELAYER_PRIVATE_KEY=your_relayer_key
+# Optional: On-chain Merkle Root commit (for scripts/commitMerkleRoot.js only)
+# The MCP server itself NEVER uses these keys. They are only needed if you
+# run the periodic batch script that commits trust-score Merkle Roots to
+# the on-chain TrustScoreRegistry contract on Polygon. Each installer sets
+# their own key; there is no shared/fixed relayer wallet.
 POLYGON_RPC_URL=your_rpc_url
-JPYC_CONTRACT_ADDRESS=0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29
-
-# Optional: On-chain Merkle Root verification
 TRUST_SCORE_REGISTRY_ADDRESS=your_registry_address
-PRIVATE_KEY=your_private_key
+PRIVATE_KEY=your_private_key_for_merkle_commits
 ```
 
 ### Run as MCP Server
@@ -208,16 +214,40 @@ Any agent can verify another agent's score:
 
 This ensures trust scores cannot be silently modified by the server operator.
 
-## Auto-Payment Conditions
+## Auto-Approval Conditions
+
+The MCP does **not** execute transactions. "Auto-approval" means `request_human_approval` returns `approved` without prompting a human, so the caller can proceed to `execute_payment` (which still only returns calldata — the caller always signs and submits themselves).
 
 All must be true:
-1. Platform auto-payment is enabled
+1. Platform auto-approval is enabled
 2. Agent has opted in (`auto_payment_enabled = true`)
 3. `trust_score >= auto_payment_threshold` (default: 50)
 4. Amount <= `auto_payment_limit` (default: 500 JPYC)
-5. Daily transaction count < limit (default: 10/day)
+5. Daily approval count < limit (default: 10/day)
 
 When conditions are not met, falls back to manual human approval.
+
+## Non-Custodial Architecture
+
+This MCP never holds private keys and never broadcasts transactions. There is no shared relayer wallet.
+
+```
+execute_payment  →  returns { to, data, value, gasEstimate, decoded }
+                       ↓
+                 Caller signs with their own wallet
+                       ↓
+                 Caller submits to Polygon, pays their own gas
+                       ↓
+                 Caller reports the tx hash back via report_tx_hash
+```
+
+**Why this matters:**
+- **No single point of failure** — no centralized wallet that can be drained by griefing attacks
+- **No regulatory exposure for MCP operators** — you're providing a tool, not moving other people's funds
+- **Each installer is independent** — no need to provision or monitor a relayer wallet to run the MCP
+- **Gas accountability is clear** — whoever sends the tx pays for it
+
+If your application needs gasless UX (e.g., end users without MATIC), build that layer **on top of** this MCP — wrap `execute_payment`'s calldata with your own meta-transaction / sponsorship logic in your application server. Keeping that out of the MCP core means every installer stays in control of their own policies and risk.
 
 ## Database Schema
 
