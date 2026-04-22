@@ -1,851 +1,884 @@
-{
-  "contractName": "BountyEscrow",
-  "abi": [
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "_admin",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "_jpyc",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "constructor"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "bidId",
-          "type": "uint64"
-        }
-      ],
-      "name": "BidNotFound",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "internalType": "uint64",
-          "name": "availableAt",
-          "type": "uint64"
-        }
-      ],
-      "name": "ClaimTimelockActive",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "ContractNotPaused",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "ContractPaused",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "internalType": "enum BountyEscrow.JobStatus",
-          "name": "current",
-          "type": "uint8"
-        }
-      ],
-      "name": "InvalidStatus",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "JobAlreadyExists",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "JobNotFound",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "NotAdmin",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        }
-      ],
-      "name": "NotClient",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        }
-      ],
-      "name": "NotWorker",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "PauseNotScheduled",
-      "type": "error"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "availableAt",
-          "type": "uint64"
-        }
-      ],
-      "name": "PauseTimelockActive",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "ReentrancyGuardReentrantCall",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "TransferFailed",
-      "type": "error"
-    },
-    {
-      "inputs": [],
-      "name": "ZeroAmount",
-      "type": "error"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "worker",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint128",
-          "name": "amount",
-          "type": "uint128"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "claimedAt",
-          "type": "uint64"
-        }
-      ],
-      "name": "AutoReleased",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "bidId",
-          "type": "uint64"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "worker",
-          "type": "address"
-        }
-      ],
-      "name": "BidAccepted",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "bidId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "bidder",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint128",
-          "name": "bidAmount",
-          "type": "uint128"
-        }
-      ],
-      "name": "BidSubmitted",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "client",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint128",
-          "name": "amount",
-          "type": "uint128"
-        }
-      ],
-      "name": "BountyOpened",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "worker",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "bytes32",
-          "name": "deliverableHash",
-          "type": "bytes32"
-        }
-      ],
-      "name": "DeliverableSubmitted",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "worker",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint128",
-          "name": "amount",
-          "type": "uint128"
-        }
-      ],
-      "name": "DeliveryConfirmed",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [],
-      "name": "PauseActivated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [],
-      "name": "PauseCancelled",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": false,
-          "internalType": "uint64",
-          "name": "availableAt",
-          "type": "uint64"
-        }
-      ],
-      "name": "PauseScheduled",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [],
-      "name": "Unpaused",
-      "type": "event"
-    },
-    {
-      "inputs": [],
-      "name": "CLAIM_TIMEOUT",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "PAUSE_TIMELOCK",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "PROTOCOL_FEE_BPS",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "uint64",
-          "name": "bidId",
-          "type": "uint64"
-        }
-      ],
-      "name": "acceptBid",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "activatePause",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "admin",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "name": "assignedBid",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "name": "bids",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "bidder",
-          "type": "address"
-        },
-        {
-          "internalType": "uint128",
-          "name": "bidAmount",
-          "type": "uint128"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "proposalHash",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "bool",
-          "name": "accepted",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "cancelScheduledPause",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "claimAvailableAt",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "claimExpired",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "confirmDelivery",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "uint128",
-          "name": "amount",
-          "type": "uint128"
-        },
-        {
-          "internalType": "uint256",
-          "name": "validAfter",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "validBefore",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "nonce3009",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "uint8",
-          "name": "v",
-          "type": "uint8"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "r",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "s",
-          "type": "bytes32"
-        }
-      ],
-      "name": "depositWithAuthorization",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "getJob",
-      "outputs": [
-        {
-          "components": [
-            {
-              "internalType": "address",
-              "name": "client",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "worker",
-              "type": "address"
-            },
-            {
-              "internalType": "uint128",
-              "name": "amount",
-              "type": "uint128"
-            },
-            {
-              "internalType": "uint64",
-              "name": "submittedAt",
-              "type": "uint64"
-            },
-            {
-              "internalType": "uint64",
-              "name": "createdAt",
-              "type": "uint64"
-            },
-            {
-              "internalType": "enum BountyEscrow.JobStatus",
-              "name": "status",
-              "type": "uint8"
-            },
-            {
-              "internalType": "bytes32",
-              "name": "deliverableHash",
-              "type": "bytes32"
-            }
-          ],
-          "internalType": "struct BountyEscrow.Job",
-          "name": "",
-          "type": "tuple"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        }
-      ],
-      "name": "getJobId",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "name": "jobs",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "client",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "worker",
-          "type": "address"
-        },
-        {
-          "internalType": "uint128",
-          "name": "amount",
-          "type": "uint128"
-        },
-        {
-          "internalType": "uint64",
-          "name": "submittedAt",
-          "type": "uint64"
-        },
-        {
-          "internalType": "uint64",
-          "name": "createdAt",
-          "type": "uint64"
-        },
-        {
-          "internalType": "enum BountyEscrow.JobStatus",
-          "name": "status",
-          "type": "uint8"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "deliverableHash",
-          "type": "bytes32"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "jpyc",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "uint128",
-          "name": "amount",
-          "type": "uint128"
-        }
-      ],
-      "name": "openBounty",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "jobId",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "pauseScheduled",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "pauseScheduledAt",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "paused",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "schedulePause",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "uint128",
-          "name": "bidAmount",
-          "type": "uint128"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "proposalHash",
-          "type": "bytes32"
-        }
-      ],
-      "name": "submitBid",
-      "outputs": [
-        {
-          "internalType": "uint64",
-          "name": "bidId",
-          "type": "uint64"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "bytes32",
-          "name": "jobKey",
-          "type": "bytes32"
-        },
-        {
-          "internalType": "bytes32",
-          "name": "deliverableHash",
-          "type": "bytes32"
-        }
-      ],
-      "name": "submitDeliverable",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "unpause",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    }
-  ],
-  "bytecode": "0x60c060405234801561000f575f5ffd5b50604051611dba380380611dba83398101604081905261002e91610127565b60017f9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00556001600160a01b0382166100995760405162461bcd60e51b81526020600482015260096024820152682d32b937a0b236b4b760b91b60448201526064015b60405180910390fd5b6001600160a01b0381166100da5760405162461bcd60e51b81526020600482015260086024820152675a65726f4a50594360c01b6044820152606401610090565b6001600160a01b0391821660a05216608052600480546001600160801b03191668010000000000000001179055610158565b80516001600160a01b0381168114610122575f5ffd5b919050565b5f5f60408385031215610138575f5ffd5b6101418361010c565b915061014f6020840161010c565b90509250929050565b60805160a051611c106101aa5f395f81816103fc0152818161069a015281816107d5015281816109d70152610adb01525f818161023f0152818161115b015281816114c601526117960152611c105ff3fe608060405234801561000f575f5ffd5b506004361061016d575f3560e01c806389e6b3f1116100d9578063d51eea8111610093578063f5f5dd411161006e578063f5f5dd41146103cd578063f729cf0d146103d7578063f851a440146103f7578063fcf6e65a1461041e575f5ffd5b8063d51eea811461038d578063df6814f6146103a0578063e7da019f146103b3575f5ffd5b806389e6b3f11461032f57806395dc7ae014610337578063b16e13431461033f578063be37822814610352578063ce67769314610367578063d46600aa1461037a575f5ffd5b80636cd68fe21161012a5780636cd68fe21461029d57806373530ffe146102b05780637443149a146102b857806374950ffd146102e0578063832d59aa146102f357806389a8742114610307575f5ffd5b80630867097e1461017157806309dfd4b7146101985780633f4ba83a146101ad578063522849e4146101b5578063550ed61b1461023a5780635c975abb14610279575b5f5ffd5b61017b6202a30081565b6040516001600160401b0390911681526020015b60405180910390f35b6101ab6101a636600461189b565b61049e565b005b6101ab61068f565b6102276101c33660046118c5565b600160208190525f9182526040909120805491810154600282015460038301546004909301546001600160a01b039485169492909216926001600160801b038216926001600160401b03600160801b8404811693600160c01b9004169160ff169087565b60405161018f9796959493929190611919565b6102617f000000000000000000000000000000000000000000000000000000000000000081565b6040516001600160a01b03909116815260200161018f565b60045461028d90600160801b900460ff1681565b604051901515815260200161018f565b61017b6102ab366004611976565b610739565b6101ab6107ca565b61017b6102c63660046118c5565b60036020525f90815260409020546001600160401b031681565b6101ab6102ee366004611976565b610852565b60045461028d90600160881b900460ff1681565b61017b610315366004611976565b5f908152602081905260409020546001600160401b031690565b6101ab6109cc565b6101ab610ad0565b6101ab61034d366004611976565b610b9e565b6103595f81565b60405190815260200161018f565b61017b6103753660046119a3565b610d59565b6101ab6103883660046119d6565b610f24565b61017b61039b3660046119f6565b611076565b61017b6103ae366004611a65565b611220565b60045461017b90600160901b90046001600160401b031681565b61017b6276a70081565b6103ea6103e5366004611976565b611321565b60405161018f9190611a86565b6102617f000000000000000000000000000000000000000000000000000000000000000081565b61046a61042c3660046118c5565b600260208190525f918252604090912080546001820154928201546003909201546001600160a01b03909116926001600160801b0316919060ff1684565b604080516001600160a01b0390951685526001600160801b039093166020850152918301521515606082015260800161018f565b6104a661141c565b600454600160801b900460ff16156104d15760405163ab35696f60e01b815260040160405180910390fd5b5f6104db83611437565b6001600160401b0381165f908152600160205260408120919250600382015460ff16600481111561050e5761050e6118e5565b146105425760038101546040516324c1171f60e11b815261053991849160ff90911690600401611b05565b60405180910390fd5b80546001600160a01b031633146105775760405163158aec2f60e31b81526001600160401b0383166004820152602401610539565b6001600160401b0383165f908152600260205260409020546001600160a01b03166105c05760405163927f98ed60e01b81526001600160401b0384166004820152602401610539565b6001600160401b038381165f81815260026020908152604080832060038082018054600160ff199182168117909255925489820180546001600160a01b039283166001600160a01b03199091161781558a8401805490951690921790935596891680865290845293829020805467ffffffffffffffff1916861790559454905194168452919290917f519396778e535396b0de5d2ea6693be6af1cc390a032408c2c94badc9df2ac04910160405180910390a3505061068b60015f516020611bbb5f395f51905f5255565b5050565b336001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016146106d857604051637bfa4b9f60e01b815260040160405180910390fd5b600454600160801b900460ff166107025760405163dcdde9dd60e01b815260040160405180910390fd5b6004805460ff60801b191690556040517fa45f47fdea8a1efdd9029a5691c7f759c32b7c698632b563573e155625d16933905f90a1565b5f818152602081905260408120546001600160401b031680820361075f57505f92915050565b6001600160401b0381165f9081526001602052604090206002600382015460ff166004811115610791576107916118e5565b1461079f57505f9392505050565b60028101546107c2906276a70090600160801b90046001600160401b0316611b36565b949350505050565b336001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161461081357604051637bfa4b9f60e01b815260040160405180910390fd5b6004805468ffffffffffffffffff60881b191690556040517fa05f4da9e9b7f469e51a67c9ffb79b8a1845ae424bc09d607b3805ca9cefaad2905f90a1565b61085a61141c565b600454600160801b900460ff16156108855760405163ab35696f60e01b815260040160405180910390fd5b5f61088f82611437565b6001600160401b0381165f9081526001602052604090209091506002600382015460ff1660048111156108c4576108c46118e5565b146108ef5760038101546040516324c1171f60e11b815261053991849160ff90911690600401611b05565b80546001600160a01b031633146109245760405163158aec2f60e31b81526001600160401b0383166004820152602401610539565b6003818101805460ff19169091179055600281015460018201546001600160801b03909116906001600160a01b031661095d8183611477565b6040516001600160801b03831681526001600160a01b038216906001600160401b038616907f959b7023b5e8382de5109131043186df7372ad13d5d8848772cd0dabee7a47d19060200160405180910390a3505050506109c960015f516020611bbb5f395f51905f5255565b50565b336001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001614610a1557604051637bfa4b9f60e01b815260040160405180910390fd5b600454600160881b900460ff16610a3f5760405163efc0db0960e01b815260040160405180910390fd5b600454600160901b90046001600160401b0316421015610a8a576004805460405163ed87532b60e01b8152600160901b9091046001600160401b031691810191909152602401610539565b6004805469ffffffffffffffffffff60801b1916600160801b1790556040517fa3ad4fce3131837dad8d98deb2c05f2b8ed23a4ccd373b28ac67805108138989905f90a1565b336001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001614610b1957604051637bfa4b9f60e01b815260040160405180910390fd5b610b266202a30042611b36565b60048054600160881b68ffffffffffffffffff60881b19909116600160901b6001600160401b03948516810260ff60881b1916919091179190911791829055604051910490911681527f81bb7d4a45f807af3ef821efdc43aa1dfc0aef8d74416b2d80376ea88aa973919060200160405180910390a1565b610ba661141c565b5f610bb082611437565b6001600160401b0381165f9081526001602052604090209091506002600382015460ff166004811115610be557610be56118e5565b14610c105760038101546040516324c1171f60e11b815261053991849160ff90911690600401611b05565b60018101546001600160a01b03163314610c485760405163435d94d960e11b81526001600160401b0383166004820152602401610539565b60028101545f90610c6d906276a70090600160801b90046001600160401b0316611b36565b9050806001600160401b0316421015610cac57604051633079beef60e01b81526001600160401b03808516600483015282166024820152604401610539565b60038201805460ff19166004179055600282015460018301546001600160801b03909116906001600160a01b0316610ce48183611477565b604080516001600160801b03841681526001600160401b0342811660208301526001600160a01b03841692908816917f114c856e4d2eed2d67eda20a47a1475b20f6ade59f8ced7909662d007cd04066910160405180910390a350505050506109c960015f516020611bbb5f395f51905f5255565b6004545f90600160801b900460ff1615610d865760405163ab35696f60e01b815260040160405180910390fd5b5f610d9085611437565b90505f6001600160401b0382165f9081526001602052604090206003015460ff166004811115610dc257610dc26118e5565b14610e04576001600160401b0381165f90815260016020526040908190206003015490516324c1171f60e11b815261053991839160ff90911690600401611b05565b600480546801000000000000000090046001600160401b0316906008610e2983611b5b565b82546101009290920a6001600160401b0381810219909316918316021790915560408051608081018252338082526001600160801b0389811660208085018281528587018c81525f606088018181528b8b168083526002808752928b902099518a546001600160a01b0319166001600160a01b03909116178a55935160018a0180546fffffffffffffffffffffffffffffffff1916919098161790965590519087015592516003909501805460ff19169515159590951790945593519384529496509392851692917f99145033ce10e56be51b3fa9b376245cd52f1f9d632613c45d6139dccdbbd137910160405180910390a4509392505050565b600454600160801b900460ff1615610f4f5760405163ab35696f60e01b815260040160405180910390fd5b5f610f5983611437565b6001600160401b0381165f908152600160208190526040909120919250600382015460ff166004811115610f8f57610f8f6118e5565b14610fba5760038101546040516324c1171f60e11b815261053991849160ff90911690600401611b05565b60018101546001600160a01b03163314610ff25760405163435d94d960e11b81526001600160401b0383166004820152602401610539565b600381018054600260ff199091168117909155810180546001600160401b03428116600160801b0267ffffffffffffffff60801b19909216919091179091556004820184905560405184815233918416907f1f5be6e4ad981a0a523ba221d106ec9c901c7719b2015b642f6377c371abb6869060200160405180910390a350505050565b6004545f90600160801b900460ff16156110a35760405163ab35696f60e01b815260040160405180910390fd5b876001600160801b03165f036110cc57604051631f2a200560e01b815260040160405180910390fd5b5f898152602081905260409020546001600160401b0316156111045760405163b6a8d58360e01b8152600481018a9052602401610539565b6040516371f70b0760e11b81523360048201523060248201526001600160801b0389166044820152606481018890526084810187905260a4810186905260ff851660c482015260e4810184905261010481018390527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063e3ee160e90610124015f604051808303815f87803b1580156111a5575f5ffd5b505af11580156111b7573d5f5f3e3d5ffd5b505050506111c689338a611583565b6040516001600160801b038a16815290915033908a906001600160401b038416907f4ac4f43d506f7f29d4bbfabcbf22e43494a335530cceb426a4f797c590e441c39060200160405180910390a498975050505050505050565b6004545f90600160801b900460ff161561124d5760405163ab35696f60e01b815260040160405180910390fd5b816001600160801b03165f0361127657604051631f2a200560e01b815260040160405180910390fd5b5f838152602081905260409020546001600160401b0316156112ae5760405163b6a8d58360e01b815260048101849052602401610539565b6112c23330846001600160801b031661173f565b6112cd833384611583565b6040516001600160801b0384168152909150339084906001600160401b038416907f4ac4f43d506f7f29d4bbfabcbf22e43494a335530cceb426a4f797c590e441c39060200160405180910390a492915050565b6040805160e0810182525f80825260208201819052918101829052606081018290526080810182905260a0810182905260c081019190915260015f61136584611437565b6001600160401b03908116825260208083019390935260409182015f20825160e08101845281546001600160a01b0390811682526001830154169481019490945260028101546001600160801b03811693850193909352600160801b830482166060850152600160c01b909204166080830152600381015460a083019060ff1660048111156113f6576113f66118e5565b6004811115611407576114076118e5565b81526020016004820154815250509050919050565b611424611854565b60025f516020611bbb5f395f51905f5255565b5f818152602081905260408120546001600160401b0316908190036114725760405163c182b72d60e01b815260048101839052602401610539565b919050565b604080516001600160a01b038481166024830152604480830185905283518084039091018152606490920183526020820180516001600160e01b031663a9059cbb60e01b17905291515f9283927f0000000000000000000000000000000000000000000000000000000000000000909116916114f39190611b85565b5f604051808303815f865af19150503d805f811461152c576040519150601f19603f3d011682016040523d82523d5f602084013e611531565b606091505b509150915081158061155f575080511580159061155f57508080602001905181019061155d9190611b9b565b155b1561157d576040516312171d8360e31b815260040160405180910390fd5b50505050565b600480545f916001600160401b03909116908261159f83611b5b565b91906101000a8154816001600160401b0302191690836001600160401b0316021790555090506040518060e00160405280846001600160a01b031681526020015f6001600160a01b03168152602001836001600160801b031681526020015f6001600160401b03168152602001426001600160401b031681526020015f600481111561162d5761162d6118e5565b81525f60209182018190526001600160401b0380851682526001808452604092839020855181546001600160a01b039182166001600160a01b03199182161783559587015182840180549190921696169590951790945591840151600284018054606087015160808801518516600160c01b026001600160c01b0391909516600160801b026001600160c01b03199092166001600160801b0390941693909317179190911691909117905560a08301516003830180549192909160ff1916908360048111156116fe576116fe6118e5565b021790555060c091909101516004909101555f93845260208490526040909320805467ffffffffffffffff19166001600160401b0385161790555090919050565b604080516001600160a01b0385811660248301528481166044830152606480830185905283518084039091018152608490920183526020820180516001600160e01b03166323b872dd60e01b17905291515f9283927f0000000000000000000000000000000000000000000000000000000000000000909116916117c39190611b85565b5f604051808303815f865af19150503d805f81146117fc576040519150601f19603f3d011682016040523d82523d5f602084013e611801565b606091505b509150915081158061182f575080511580159061182f57508080602001905181019061182d9190611b9b565b155b1561184d576040516312171d8360e31b815260040160405180910390fd5b5050505050565b5f516020611bbb5f395f51905f525460020361188357604051633ee5aeb560e01b815260040160405180910390fd5b565b80356001600160401b0381168114611472575f5ffd5b5f5f604083850312156118ac575f5ffd5b823591506118bc60208401611885565b90509250929050565b5f602082840312156118d5575f5ffd5b6118de82611885565b9392505050565b634e487b7160e01b5f52602160045260245ffd5b6005811061191557634e487b7160e01b5f52602160045260245ffd5b9052565b6001600160a01b038881168252871660208201526001600160801b03861660408201526001600160401b0385811660608301528416608082015260e0810161196460a08301856118f9565b8260c083015298975050505050505050565b5f60208284031215611986575f5ffd5b5035919050565b80356001600160801b0381168114611472575f5ffd5b5f5f5f606084860312156119b5575f5ffd5b833592506119c56020850161198d565b929592945050506040919091013590565b5f5f604083850312156119e7575f5ffd5b50508035926020909101359150565b5f5f5f5f5f5f5f5f610100898b031215611a0e575f5ffd5b88359750611a1e60208a0161198d565b965060408901359550606089013594506080890135935060a089013560ff81168114611a48575f5ffd5b979a969950949793969295929450505060c08201359160e0013590565b5f5f60408385031215611a76575f5ffd5b823591506118bc6020840161198d565b5f60e08201905060018060a01b03835116825260018060a01b0360208401511660208301526001600160801b0360408401511660408301526001600160401b0360608401511660608301526001600160401b03608084015116608083015260a0830151611af660a08401826118f9565b5060c092830151919092015290565b6001600160401b0383168152604081016118de60208301846118f9565b634e487b7160e01b5f52601160045260245ffd5b6001600160401b038181168382160190811115611b5557611b55611b22565b92915050565b5f6001600160401b0382166001600160401b038103611b7c57611b7c611b22565b60010192915050565b5f82518060208501845e5f920191825250919050565b5f60208284031215611bab575f5ffd5b815180151581146118de575f5ffdfe9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00a264697066735822122011cb631f5c1e5f294c5aac15d2f37b6206732c75b6d9afc03bca057971b1a67b64736f6c634300081c0033"
-}
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_admin",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_jpyc",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "bidId",
+        "type": "uint64"
+      }
+    ],
+    "name": "BidNotFound",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "availableAt",
+        "type": "uint64"
+      }
+    ],
+    "name": "ClaimTimelockActive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ContractNotPaused",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ContractPaused",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "internalType": "enum BountyEscrow.JobStatus",
+        "name": "current",
+        "type": "uint8"
+      }
+    ],
+    "name": "InvalidStatus",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "JobAlreadyExists",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "JobNotFound",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotAdmin",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      }
+    ],
+    "name": "NotClient",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      }
+    ],
+    "name": "NotWorker",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PauseAlreadyScheduled",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PauseNotScheduled",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "availableAt",
+        "type": "uint64"
+      }
+    ],
+    "name": "PauseTimelockActive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAmount",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "worker",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "claimedAt",
+        "type": "uint64"
+      }
+    ],
+    "name": "AutoReleased",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "bidId",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "worker",
+        "type": "address"
+      }
+    ],
+    "name": "BidAccepted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "bidId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "bidder",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "bidAmount",
+        "type": "uint128"
+      }
+    ],
+    "name": "BidSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "client",
+        "type": "address"
+      }
+    ],
+    "name": "BountyCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "client",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      }
+    ],
+    "name": "BountyOpened",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "worker",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "deliverableHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "DeliverableSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "worker",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      }
+    ],
+    "name": "DeliveryConfirmed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "PauseActivated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "PauseCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "availableAt",
+        "type": "uint64"
+      }
+    ],
+    "name": "PauseScheduled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "Unpaused",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "CLAIM_TIMEOUT",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "PAUSE_TIMELOCK",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "PROTOCOL_FEE_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "bidId",
+        "type": "uint64"
+      }
+    ],
+    "name": "acceptBid",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "activatePause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "admin",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "name": "assignedBid",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "name": "bids",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "bidder",
+        "type": "address"
+      },
+      {
+        "internalType": "uint128",
+        "name": "bidAmount",
+        "type": "uint128"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "proposalHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bool",
+        "name": "accepted",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cancelBounty",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "cancelScheduledPause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "claimAvailableAt",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "claimExpired",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "confirmDelivery",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint256",
+        "name": "validAfter",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "validBefore",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "nonce3009",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "v",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "r",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "s",
+        "type": "bytes32"
+      }
+    ],
+    "name": "depositWithAuthorization",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getJob",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "client",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "worker",
+            "type": "address"
+          },
+          {
+            "internalType": "uint128",
+            "name": "amount",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint64",
+            "name": "submittedAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "createdAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "enum BountyEscrow.JobStatus",
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "deliverableHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct BountyEscrow.Job",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getJobId",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "name": "jobs",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "client",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "worker",
+        "type": "address"
+      },
+      {
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint64",
+        "name": "submittedAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "createdAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "enum BountyEscrow.JobStatus",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "deliverableHash",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "jpyc",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      }
+    ],
+    "name": "openBounty",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "jobId",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pauseScheduled",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pauseScheduledAt",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "schedulePause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "bidAmount",
+        "type": "uint128"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "proposalHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "submitBid",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "bidId",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobKey",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "deliverableHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "submitDeliverable",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "unpause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
