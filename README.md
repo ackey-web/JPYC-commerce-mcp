@@ -388,6 +388,12 @@ While the contract is paused, new bounties, acceptances, submissions, delivery c
 
 ---
 
+## Contract Deployment Status
+
+Contracts (TrustSBT, BountyEscrow v2.1, MockJPYC) are tested on **Hardhat local** with full integration E2E coverage. Amoy/mainnet deployment is **user responsibility**. See [`docs/amoy-deploy-guide.md`](docs/amoy-deploy-guide.md) for step-by-step deployment instructions.
+
+---
+
 ## Legal Disclaimer
 
 This software ("JPYC Commerce MCP") is provided for experimental, research, and educational purposes only, under the terms of the Apache License 2.0.
