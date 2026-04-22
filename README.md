@@ -10,7 +10,7 @@ A Model Context Protocol (MCP) server for autonomous AI agent commerce — task 
 
 - **Non-Custodial by Design** — The MCP server never holds private keys. `execute_payment` returns transaction calldata; the caller signs and submits with their own wallet.
 - **Trust Score System** — Multi-axis agent reputation (volume × reliability × longevity × reputation × failure decay) with anti-sybil Diversity Factor (CVE-T1)
-- **On-Chain Verification** — Merkle Root committed to Polygon via TrustSBT contract; any party can verify scores with Merkle Proof
+- **On-Chain Verification** — Merkle-root anchored on Polygon via TrustSBT contract; any party can verify scores with Merkle Proof
 - **SBT (Soul Bound Token)** — ERC-5192 non-transferable token records trust score on-chain (Polygon Amoy testnet → mainnet)
 - **AI-Enhanced Task Evaluation** — Claude API analyzes task complexity with skill-weighted scoring
 - **Bidirectional Negotiation** — Multi-round concession negotiation between agents
@@ -219,6 +219,15 @@ Trust scores are recorded on-chain as **ERC-5192 non-transferable tokens** (Trus
 - Non-transferable — tied to the agent's wallet permanently
 - `update_agent_record` returns calldata for the owner to call `updateScore()` on the contract
 
+#### SBT Rank Tiers
+
+| Rank | trust_score | Auto-approval limit | Display |
+|------|-------------|---------------------|---------|
+| Bronze | 0–30 | 100 JPYC/tx | Bronze badge |
+| Silver | 30–60 | 500 JPYC/tx | Silver badge |
+| Gold | 60–100 | 2,000 JPYC/tx | Gold badge |
+| Platinum | 100+ | Human approval only | Platinum badge |
+
 ---
 
 ## Database Schema
@@ -257,11 +266,37 @@ Notable security properties:
 
 This software ("JPYC Commerce MCP") is provided for experimental, research, and educational purposes only, under the terms of the Apache License 2.0.
 
-The applicability of Japan's Payment Services Act (資金決済法), Financial Instruments and Exchange Act (金融商品取引法), and other financial regulations to operating this software has not been formally reviewed by legal counsel. This software does **not** constitute a money transmission service, exchange service, or financial intermediation service — it returns transaction calldata only and never holds or moves user funds.
+### Regulatory Status
 
-**Do not deploy in a production environment without independent legal due diligence.**
+The applicability of the following Japanese laws and regulations to the operation of this MCP server has **not been formally reviewed** by qualified legal counsel:
 
-Patent pending (特許出願済). See [NOTICE](NOTICE) for attribution requirements.
+- **Payment Services Act (資金決済法)**: Including provisions on prepaid payment instruments (前払式支払手段), fund transfer services (資金移動業), and electronic payment instruments (電子決済手段, as amended in 2023).
+- **Financial Instruments and Exchange Act (金融商品取引法)**: Including securities classification of tokens or SBTs issued through this system.
+- **Act on Prevention of Transfer of Criminal Proceeds (犯罪収益移転防止法)**: Including AML/KYC obligations that may apply to registry operators.
+
+### Non-Custodial Design
+
+This MCP server does **not** hold private keys, broadcast transactions, or manage funds on behalf of users. All transaction signing and submission to the Polygon network is performed exclusively by the caller using their own wallet. The server returns calldata only. However, operators should independently verify whether this architecture satisfies applicable regulatory requirements in their jurisdiction.
+
+### Registry and Fee Collection
+
+Future versions may introduce protocol fee collection via smart contract. Operators who collect fees from payment flows should obtain independent legal advice on whether such activity constitutes fund transfer business (資金移動業) or other regulated activity under Japanese law.
+
+### SBT Issuance
+
+Soulbound Tokens (SBTs) issued through this system are non-transferable and carry no financial return expectation. However, any future design changes that add governance rights, revenue sharing, or transferability must be re-evaluated for securities law compliance.
+
+### No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. THE AUTHORS AND CONTRIBUTORS SHALL NOT BE LIABLE FOR ANY REGULATORY PENALTIES, FINES, OR OTHER CONSEQUENCES ARISING FROM THE USE OR OPERATION OF THIS SOFTWARE.
+
+### Patent
+
+Core design concepts of this system are patent pending (特許出願済). See [NOTICE](NOTICE) for attribution requirements.
+
+### Recommendation
+
+Before deploying this software in any production or commercial capacity, consult with a qualified attorney specializing in Japanese fintech regulations.
 
 ---
 
