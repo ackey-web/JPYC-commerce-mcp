@@ -456,19 +456,186 @@ mcp call cancel_bounty '{
 - [ ] ASSIGNED 状態（B-1-3 完了後）で `cancelBounty` を呼ぶと `revert InvalidStatus` になることを確認
 - [ ] SUBMITTED 状態で `cancelBounty` を呼ぶと `revert InvalidStatus` になることを確認
 
+
+---
+
+## シナリオ C: Hardhat local フル E2E（Amoy デプロイ後回し対応）
+
+> **方針変更（2026-04-22）**: またろ氏の判断により Amoy 実デプロイを後回しにし、Hardhat local 統合テストで Phase 0+ 完了判定とする。
+> テスト実装ファイル: `contracts/test/integration/fullFlow.test.js`（smart-contract-engineer + backend-engineer 作成予定）
+
+Hardhat local ノード上で MockJPYC + TrustSBT + BountyEscrow をデプロイし、SBT mint → BountyEscrow フロー → Merkle Root commit の全チェーンを統合検証する。
+
+### 前提条件（シナリオ C 固有）
+
+| 項目 | 値 |
+|---|---|
+| 実行環境 | `npx hardhat test` （ローカル Hardhat ノード） |
+| MockJPYC | `contracts/test/helpers/MockERC20.sol` または同等品 |
+| TrustSBT | `contracts/contracts/TrustSBT.sol`（Amoy デプロイアドレス不要） |
+| BountyEscrow | `contracts/contracts/BountyEscrow.sol` v2.1（PROTOCOL_FEE_BPS=0） |
+| DB | Neon 実接続（`DATABASE_URL` 設定済み）または pg-mem モック |
+
+---
+
+### C-1: コントラクトデプロイ（Hardhat local）
+
+```js
+// fullFlow.test.js 冒頭
+const MockJPYC = await ethers.deployContract('MockERC20', ['JPY Coin', 'JPYC', 18]);
+const TrustSBT  = await ethers.deployContract('TrustSBT', [owner.address]);
+const BountyEscrow = await ethers.deployContract('BountyEscrow', [
+  MockJPYC.target, TrustSBT.target, owner.address
+]);
+```
+
+**検証項目:**
+- [ ] 3 コントラクトのデプロイが成功する
+- [ ] `BountyEscrow.jpycToken()` が MockJPYC アドレスを返す
+- [ ] `BountyEscrow.PROTOCOL_FEE_BPS()` が `0` を返す（Phase 0+ = 0% fee）
+
+---
+
+### C-2: SBT mint（TrustSBT.mint）
+
+```js
+await TrustSBT.connect(owner).mint(agentB.address, 0); // tokenId=0, initialScore=0
+```
+
+**検証項目:**
+- [ ] `TrustSBT.ownerOf(0)` が agentB.address を返す
+- [ ] `TrustSBT.locked(0)` が `true` を返す（ERC-5192 non-transferable）
+- [ ] `TrustSBT.getScore(0)` が `0` を返す
+- [ ] MCP の `update_agent_record` calldata をブロードキャストすると `TrustSBT.updateScore()` が成功する
+
+---
+
+### C-3: BountyEscrow フル統合（openBounty → confirmDelivery）
+
+B-1 と同じフロー、ただし Hardhat local コントラクト + MockJPYC で完結:
+
+```js
+// MockJPYC を agentA に配布
+await MockJPYC.mint(agentA.address, ethers.parseUnits('1000', 18));
+await MockJPYC.connect(agentA).approve(BountyEscrow.target, ethers.parseUnits('500', 18));
+
+// openBounty
+const jobKey = ethers.keccak256(ethers.toUtf8Bytes('job-001'));
+await BountyEscrow.connect(agentA).openBounty(jobKey, ethers.parseUnits('500', 18));
+```
+
+**検証項目:**
+- [ ] `openBounty` → `submitBid` → `acceptBid` → `submitDeliverable` → `confirmDelivery` が順に成功
+- [ ] `confirmDelivery` 後、agentB の JPYC 残高が +500（Phase 0+ fee ゼロのため全額）
+- [ ] `jobs[jobKey].status == RELEASED` を確認
+- [ ] `cancelBounty` (OPEN 状態) → `CANCELLED` + agentA 全額返金を確認
+- [ ] `claimExpired` (time.increase 後) → `AUTO_RELEASED` + agentB 全額受取を確認
+
+---
+
+### C-4: SBT trust_score 更新 + Merkle Root commit
+
+```js
+// MCP update_agent_record → TrustSBT.updateScore calldata を Hardhat で実行
+await TrustSBT.connect(owner).updateScore(0, newScore, newMerkleRoot);
+```
+
+**検証項目:**
+- [ ] `TrustSBT.getScore(0)` が更新後スコアを返す
+- [ ] `TrustSBT.merkleRoot()` が新しい Merkle Root を返す
+- [ ] `scripts/commitMerkleRoot.js` が Hardhat ノードに向けて正常実行される（`POLYGON_RPC_URL=http://127.0.0.1:8545`）
+- [ ] `mcp_merkle_commits` テーブルにコミット記録が INSERT される
+
+---
+
+### C-5: DB + コントラクト整合性確認
+
+**検証項目:**
+- [ ] Neon DB の `mcp_agents.trust_score` と `TrustSBT.getScore(tokenId)` が一致する
+- [ ] `verify_trust_score` MCP tool が Merkle Proof を正しく検証する
+- [ ] Merkle Root が Neon DB と TrustSBT コントラクト両方で一致する
+
+---
+
+## シナリオ D: SBT ↔ BountyEscrow ↔ Merkle Root 連携（agent-to-agent.test.js 拡張）
+
+> テスト実装ファイル: `tests/agent-to-agent.test.js`（既存ファイルへの拡張）
+
+Hardhat local ノード + Neon DB（または pg-mem）を組み合わせた、MCP ツール経由のエージェント間完全フロー。
+
+### D-1: エージェント登録 → BountyEscrow 開設
+
+```bash
+# MCP tool 経由
+mcp call get_sbt_profile '{"wallet_address": "0xAAAA...0001"}'
+mcp call open_bounty '{"poster_wallet": "0xAAAA...0001", "amount_jpyc": 500}'
+```
+
+**検証項目:**
+- [ ] `mcp_agents` に Agent A/B が登録される
+- [ ] `open_bounty` が `job_key` と `open_calldata` を返す
+- [ ] calldata を Hardhat local へブロードキャスト → `BountyEscrow.jobs[jobKey].status == OPEN`
+
+---
+
+### D-2: 入札 → 承認 → 成果物提出 → 納品確認
+
+```bash
+mcp call submit_bid '{"job_key": "<jobKey>", "bidder_wallet": "0xBBBB...0002", "bid_amount_jpyc": 480}'
+mcp call accept_bid '{"job_key": "<jobKey>", "acceptor_wallet": "0xAAAA...0001", "bid_index": 0}'
+mcp call submit_deliverable '{"job_key": "<jobKey>", "worker_wallet": "0xBBBB...0002", "deliverable_hash": "0xabc..."}'
+mcp call confirm_delivery_bounty '{"job_key": "<jobKey>", "buyer_wallet": "0xAAAA...0001"}'
+```
+
+**検証項目:**
+- [ ] 各 MCP tool が有効な calldata を返す（セレクタ `0xce677693` / `0x09dfd4b7` / `0xd46600aa` / `0x74950ffd`）
+- [ ] Hardhat local ブロードキャスト後、状態遷移が OPEN → ASSIGNED → SUBMITTED → RELEASED
+- [ ] Agent B の JPYC 残高が +480（fee ゼロ、全額）増加
+
+---
+
+### D-3: SBT 更新 + Merkle Root commit
+
+```bash
+mcp call update_agent_record '{"agent_id": "<B>", "task_result": "completed", "sentiment": 0.85}'
+node scripts/commitMerkleRoot.js  # Hardhat ノード向け
+```
+
+**検証項目:**
+- [ ] `update_agent_record` が `onchain.calldata` を返す
+- [ ] calldata を Hardhat local でブロードキャスト → `TrustSBT.updateScore()` 成功
+- [ ] `commitMerkleRoot.js` 実行後、`TrustSBT.merkleRoot()` が更新される
+- [ ] `mcp_merkle_commits` テーブルにコミット記録が INSERT される
+- [ ] DB `trust_score` とオンチェーン `getScore()` が一致する
+
+---
+
 ---
 
 ## 実行チェックリスト（P0-18 完了判定）
 
-- [ ] シナリオ 1 ハッピーパス: 全ステップ通過
-- [ ] シナリオ 2-A キャンセル: スコア不変を確認
-- [ ] シナリオ 2-B 失敗: failure_rate 反映を確認
-- [ ] シナリオ 2-C Sybil: Diversity Factor 抑制を確認
-- [ ] シナリオ 3 Merkle Root: Amoy コミット成功
-- [ ] シナリオ B-1 BountyEscrow 正常系: OPEN → RELEASED + SBT 更新を Amoy で確認
-- [ ] シナリオ B-2 期限失効系: claimExpired → AUTO_RELEASED を Hardhat テストで確認
-- [ ] シナリオ B-3 キャンセル系: cancelBounty → CANCELLED + 返金を Amoy で確認
-- [ ] SBT mint の Amoy 疎通（smart-contract-engineer デプロイアドレス必須）
-- [ ] JPYC 送金 calldata の Amoy ブロードキャスト成功
+> **方針変更（2026-04-22）**: Amoy 実デプロイを後回しにし、Hardhat local 統合テストで Phase 0+ 完了判定とする。
 
-全項目チェック完了 → Task #20 (P0-18) completed
+### Neon DB 疎通（完了済み）
+- [x] シナリオ 1 ハッピーパス: 14/14 pass（commit a13d7ed）
+- [x] シナリオ 2-A キャンセル: スコア不変を確認
+- [x] シナリオ 2-B 失敗: failure_rate 反映を確認
+- [x] シナリオ 2-C Sybil: Diversity Factor 抑制を確認
+- [x] シナリオ 3 Merkle Root: calldata 生成確認
+
+### BountyEscrow Hardhat テスト（完了済み）
+- [x] シナリオ B-1 正常系: OPEN → RELEASED（54テスト pass、commit 2ea68b9）
+- [x] シナリオ B-2 期限失効系: claimExpired → AUTO_RELEASED（Hardhat time.increase）
+- [x] シナリオ B-3 キャンセル系: cancelBounty → CANCELLED + revert ガード
+
+### Hardhat local 統合 E2E（Phase 0+ 完了判定）
+- [ ] シナリオ C-1〜C-5: MockJPYC + TrustSBT + BountyEscrow フル統合 pass
+- [ ] シナリオ D-1〜D-3: MCP tools ↔ Hardhat ↔ Neon DB 連携 pass
+- [ ] `contracts/test/integration/fullFlow.test.js` 全テスト pass
+
+### Amoy 実ブロードキャスト（Phase 0+ 完了後にオプション実施）
+- [ ] SBT コントラクト Amoy デプロイ（deploy script commit 3d14da5 準備済み）
+- [ ] BountyEscrow v2.1 Amoy デプロイ（BOUNTY_ESCROW_ADDRESS_AMOY 設定後）
+- [ ] Amoy 実ブロードキャストで E2E 疎通確認
+
+Hardhat local 統合 E2E 全項目チェック完了 → Task #20 (P0-18) completed
