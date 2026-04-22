@@ -347,36 +347,38 @@ Gas fees for all on-chain operations are paid by the end user via a pluggable re
 
 ## Operator Custody
 
-The maintainers hold no user funds or private keys directly. Maintainers participate as one signer (out of three) in the DAO Treasury multisig, but cannot unilaterally withdraw or redirect funds — any Treasury movement requires at least 2-of-3 independent signatures and is publicly auditable on-chain. The MCP server itself is a pure software provider; it returns transaction calldata and EIP-712 typed data for users to sign with their own wallets.
+The maintainers hold no user funds or private keys directly. The MCP server itself is a pure software provider; it returns transaction calldata and EIP-712 typed data for users to sign with their own wallets. In Phase 1+, maintainers will participate as one signer (out of three) in the DAO Treasury multisig, but cannot unilaterally withdraw or redirect funds — any Treasury movement requires at least 2-of-3 independent signatures.
 
 ---
 
 ## Protocol Fee
 
-- **Phase 0+**: **0%** (no protocol fees).
-- **Phase 1+ (planned)**: 0.1% routed immutably to a DAO Treasury (Gnosis Safe 2-of-3 multisig), as a new contract deployment (BountyEscrow v2.2).
+- **Phase 0+ (current)**: **0%** — no protocol fees are collected. `PROTOCOL_FEE_BPS = 0` as a constant in `BountyEscrow.sol` (v2.1).
+- **Phase 1+ (planned)**: 0.1% routed immutably to a DAO Treasury (Gnosis Safe 2-of-3 multisig on Polygon), as a new contract deployment (BountyEscrow v2.2). Changing the fee requires a new contract deployment.
 
 Maintainers do not receive fees directly in any phase.
 
 ---
 
-## DAO Treasury
+## DAO Treasury (Phase 1+)
 
-The protocol fee recipient is a Gnosis Safe multisig on Polygon, configured as **2-of-3** for Phase 0+:
+In Phase 1+, protocol fees will flow to a Gnosis Safe multisig on Polygon, configured as **2-of-3** for Phase 1+:
 - 3 total signers (maintainer + community representatives)
 - Threshold: 2 signatures required for any movement
 - Maintainer holds 1 signer key; **cannot unilaterally access funds**
 - All Treasury movements require on-chain multisig signatures from at least 2 independent parties
-- All transactions are publicly auditable via Polygonscan
+- Publicly auditable via Polygonscan
 
-Phase 1+ Roadmap: transition to token-based governance (DAO voting) once network adoption warrants formal governance.
+**Note**: DAO Treasury is not active in Phase 0+. See [Phase 1 Roadmap](docs/phase1-roadmap.md) for the rollout plan.
+
+Phase 2+ Roadmap: transition to token-based governance (DAO voting).
 
 ---
 
 ## Funding Model
 
-- **Phase 0+**: Self-hosted (users run their own infra). Project sustained by donations and grants.
-- **Phase 1+**: Protocol fees to DAO Treasury + grants + sponsors + enterprise support.
+- **Phase 0+ (current)**: Self-hosted (users run their own infrastructure). Project sustained by donations and grants (Polygon Village, JPYC, Gitcoin, Ethereum Foundation), plus GitHub Sponsors (planned) and enterprise support contracts (upon inquiry).
+- **Phase 1+ (planned)**: Protocol fees (0.1%) to DAO Treasury will become the primary recurring source, complemented by grants, sponsors, and enterprise support.
 
 ---
 
