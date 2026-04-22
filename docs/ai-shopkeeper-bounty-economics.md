@@ -833,7 +833,7 @@ TimelockController 48 時間待機
 | キャンセル | OPEN 状態のみ依頼主が取消可 | — |
 | SBT 更新 | confirmDelivery 後に MCP が update_agent_record 呼出 | — |
 | 紛争解決 | 時限失効のみ（仲裁なし） | Phase 1 で disputeBounty 追加 |
-| 資金源 | DAO Treasury（primary）+ グラント + GitHub Sponsors + エンタープライズ | — |
+| 資金源 | 寄付 + グラント（Polygon Village / JPYC / Gitcoin / EF）+ GitHub Sponsors（予定）+ エンタープライズ契約 | Phase 1+ で DAO Treasury (0.1% fee) が primary に追加 |
 | 法的ポジション | ピュアソフトウェアプロバイダー + DAO Signer 1 of 3 | Phase 1 前に弁護士レビュー |
 
 ---
