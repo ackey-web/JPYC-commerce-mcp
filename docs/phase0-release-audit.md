@@ -101,19 +101,20 @@ README.md 内 10 箇所以上で非カストディアル原則に言及:
 
 ### 7. 外部公開 NG ワードスキャン — PASS
 
-禁止語: 「義照環」「特許取得済」（「特許出願済」「patent-pending」は OK）
+禁止語: `<禁止ワード1>`、`<禁止ワード2>`（「特許出願済」「patent-pending」は OK。実語句は非公開マスタ参照）
 
 **git log**:
-- `git log --all -p | grep -E "(義照環|特許取得済)"` → 1 件ヒット
-- 内容: `DEVELOPMENT_PLAN.md` の「**NGワード**: 「義照環」「特許取得済」は絶対禁止」という**禁止事項を明示するための記述**のみ。実使用ゼロ。
+- `git log --all -p | grep -E "(<禁止ワード1>|<禁止ワード2>)"` → 1 件ヒット（実語句で実行時）
+- 内容: `DEVELOPMENT_PLAN.md` の「**NGワード**: `<禁止ワード1>`、`<禁止ワード2>` は絶対禁止」という**禁止事項を明示するための記述**のみ。実使用ゼロ。
 
 **working tree**:
 - `DEVELOPMENT_PLAN.md`, `docs/marketing-release-checklist.md`, `docs/marketing-drafts.md`, `docs/archive/CLAUDE_md_20260421.md` に出現
 - すべて **禁止ポリシーを記述するための引用**
 - 公開用 README / コード / コントラクト / マーケ訴求本文には **1 件もない**
+- R2 Option A 採用後、working tree 側は全て抽象参照化（`<禁止ワード1>` / `<禁止ワード2>`）で置換済
 
 補足リスクと推奨:
-- `DEVELOPMENT_PLAN.md` と `docs/marketing-release-checklist.md` も公開リポジトリに含まれるため、NG 語検索で引っかかる可能性がある。引用記法を変え（例: `"g——k"` のような伏字）、検索ヒットを避けると安全度が上がる。
+- `DEVELOPMENT_PLAN.md` と `docs/marketing-release-checklist.md` も公開リポジトリに含まれるため、NG 語検索で引っかかる可能性がある。引用記法を変え（抽象参照化 `<禁止ワード1>` 等）、検索ヒットを避けると安全度が上がる。R2 Option A で実施済。
 - `docs/archive/CLAUDE_md_20260421.md` は archive としてのアクセス頻度は低いが同様の対応が望ましい。
 - NOTE: これは CHECK 7 本来の趣旨（実使用の検出）では PASS。公開戦略上の任意改善項目として記録。
 
