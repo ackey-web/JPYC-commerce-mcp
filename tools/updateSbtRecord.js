@@ -1,100 +1,66 @@
 /**
  * Tool 6 (v2): update_agent_record
  * タスク完了後にエージェントの信頼スコアを更新する
- *
- * ファイル名は旧名のまま（index.jsでリネーム済み）
+ * SEC-1: recent_failure_rate は pg カウントクエリで正確に算出
+ * SEC-2: active_months は count_active_months SQL 関数（DISTINCT 月）で算出
  */
-import { supabase } from '../lib/supabase.js';
+import { db } from '../lib/db.js';
 import { calculateTrustScore } from '../lib/trustScore.js';
+import { buildMerkleTree } from '../lib/merkle.js';
+import {
+  getSbtTokenId,
+  buildMintCalldata,
+  buildUpdateTrustScoreCalldata,
+} from '../lib/sbtClient.js';
 
 export default async function handler({ agent_id, task_id, task_result, sentiment }) {
   const now = new Date().toISOString();
 
-  // --- 1. タスク結果を履歴に記録 ---
-  const { error: insertError } = await supabase
-    .from('mcp_task_results')
-    .insert({
-      agent_id,
-      task_id,
-      result: task_result,
-      sentiment_given: sentiment ?? null,
-      resolved_at: now,
-    });
+  await db.query(
+    `INSERT INTO mcp_task_results (agent_id, task_id, result, sentiment_given, resolved_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [agent_id, task_id, task_result, sentiment ?? null, now]
+  );
 
-  if (insertError) {
-    throw new Error(`タスク結果記録失敗: ${insertError.message}`);
-  }
-
-  // --- 2. 発注側キャンセルはカウントしない ---
   if (task_result === 'cancelled_by_client') {
     return { trust_score: null, message: '発注側キャンセル: エージェントスコアに影響なし' };
   }
 
-  // --- 3. エージェント側キャンセルはfailedと同等 ---
   const effectiveResult = task_result === 'cancelled_by_agent' ? 'failed' : task_result;
 
-  // エージェント取得
-  const { data: agent, error: agentError } = await supabase
-    .from('mcp_agents')
-    .select('*')
-    .eq('id', agent_id)
-    .single();
+  const { rows } = await db.query(`SELECT * FROM mcp_agents WHERE id = $1`, [agent_id]);
+  const agent = rows[0];
+  if (!agent) throw new Error(`エージェントID ${agent_id} が見つかりません`);
 
-  if (agentError || !agent) {
-    throw new Error(`エージェントID ${agent_id} が見つかりません`);
-  }
+  const totalTaskCount = agent.total_task_count + 1;
+  let completionCount = agent.completion_count;
+  const updates = { total_task_count: totalTaskCount, updated_at: now };
 
-  // --- 4. カウンタ更新 ---
-  const updates = {
-    total_task_count: agent.total_task_count + 1,
-    updated_at: now,
-  };
-
-  // --- 5. completed / failed 分岐 ---
   if (effectiveResult === 'completed') {
-    updates.completion_count = agent.completion_count + 1;
+    completionCount = agent.completion_count + 1;
+    updates.completion_count = completionCount;
     updates.last_completed_at = now;
   } else {
-    updates.completion_count = agent.completion_count;
+    updates.completion_count = completionCount;
     updates.last_failed_at = now;
   }
 
-  // --- 6. first_task_at 初期化 ---
-  if (!agent.first_task_at) {
-    updates.first_task_at = now;
-  }
+  if (!agent.first_task_at) updates.first_task_at = now;
 
-  // --- 7. smoothed_rate 更新（ラプラス平滑化） ---
-  updates.smoothed_rate = (updates.completion_count + 1) / (updates.total_task_count + 2);
+  updates.smoothed_rate = (completionCount + 1) / (totalTaskCount + 2);
 
-  // --- 8. active_months 更新 ---
+  // SEC-2: count_active_months SQL 関数（DISTINCT 月で重複排除）
   if (effectiveResult === 'completed') {
-    const { data: monthsData } = await supabase.rpc('count_active_months', {
-      p_agent_id: agent_id,
-    }).single();
-
-    // RPCが使えない場合のフォールバック: 直接クエリ
-    if (monthsData?.count != null) {
-      updates.active_months = monthsData.count;
-    } else {
-      const { data: results } = await supabase
-        .from('mcp_task_results')
-        .select('resolved_at')
-        .eq('agent_id', agent_id)
-        .eq('result', 'completed');
-
-      if (results) {
-        const uniqueMonths = new Set(
-          results.map((r) => r.resolved_at.slice(0, 7))
-        );
-        updates.active_months = uniqueMonths.size;
-      }
-    }
+    const { rows: monthRows } = await db.query(
+      `SELECT count_active_months($1) AS count`,
+      [agent_id]
+    );
+    updates.active_months = monthRows[0]?.count ?? agent.active_months;
   } else {
     updates.active_months = agent.active_months;
   }
 
-  // --- 9. avg_sentiment 更新 ---
+  // avg_sentiment 更新
   let currentSentimentCount = agent.sentiment_count;
   let currentAvgSentiment = agent.avg_sentiment;
 
@@ -103,20 +69,13 @@ export default async function handler({ agent_id, task_id, task_result, sentimen
     updates.sentiment_count = currentSentimentCount;
 
     if (currentSentimentCount <= 10) {
-      // 10件以下: 単純平均（DBから算出）
-      const { data: avgData } = await supabase
-        .from('mcp_task_results')
-        .select('sentiment_given')
-        .eq('agent_id', agent_id)
-        .eq('result', 'completed')
-        .not('sentiment_given', 'is', null);
-
-      if (avgData && avgData.length > 0) {
-        const sum = avgData.reduce((s, r) => s + r.sentiment_given, 0);
-        currentAvgSentiment = sum / avgData.length;
-      }
+      const { rows: avgRows } = await db.query(
+        `SELECT AVG(sentiment_given) AS avg FROM mcp_task_results
+         WHERE agent_id = $1 AND result = 'completed' AND sentiment_given IS NOT NULL`,
+        [agent_id]
+      );
+      currentAvgSentiment = avgRows[0]?.avg ?? currentAvgSentiment;
     } else {
-      // 11件以降: 指数移動平均（α=0.2）
       currentAvgSentiment = 0.8 * currentAvgSentiment + 0.2 * sentiment;
     }
     updates.avg_sentiment = currentAvgSentiment;
@@ -125,29 +84,24 @@ export default async function handler({ agent_id, task_id, task_result, sentimen
     updates.sentiment_count = currentSentimentCount;
   }
 
-  // --- 10. recent_failure_rate 算出 ---
+  // SEC-1: pg カウントクエリで recent_failure_rate を正確に算出
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: recentFailures } = await supabase
-    .from('mcp_task_results')
-    .select('id', { count: 'exact', head: true })
-    .eq('agent_id', agent_id)
-    .in('result', ['failed', 'timeout'])
-    .gte('resolved_at', thirtyDaysAgo);
+  const { rows: failRows } = await db.query(
+    `SELECT COUNT(*) AS count FROM mcp_task_results
+     WHERE agent_id = $1 AND result = ANY($2) AND resolved_at >= $3`,
+    [agent_id, ['failed', 'timeout'], thirtyDaysAgo]
+  );
+  const { rows: totalRows } = await db.query(
+    `SELECT COUNT(*) AS count FROM mcp_task_results
+     WHERE agent_id = $1 AND result = ANY($2) AND resolved_at >= $3`,
+    [agent_id, ['completed', 'failed', 'timeout'], thirtyDaysAgo]
+  );
 
-  const { data: recentTotal } = await supabase
-    .from('mcp_task_results')
-    .select('id', { count: 'exact', head: true })
-    .eq('agent_id', agent_id)
-    .in('result', ['completed', 'failed', 'timeout'])
-    .gte('resolved_at', thirtyDaysAgo);
-
-  // supabase count with head:true returns count in response
-  const failCount = recentFailures?.length ?? 0;
-  const totalCount = recentTotal?.length ?? 0;
+  const failCount = parseInt(failRows[0]?.count ?? '0', 10);
+  const totalCount = parseInt(totalRows[0]?.count ?? '0', 10);
   const recentFailureRate = totalCount > 0 ? failCount / totalCount : 0;
 
-  // --- 11. trust_score 再計算 ---
   updates.trust_score = calculateTrustScore({
     completion_count: updates.completion_count,
     smoothed_rate: updates.smoothed_rate,
@@ -156,14 +110,54 @@ export default async function handler({ agent_id, task_id, task_result, sentimen
     recent_failure_rate: recentFailureRate,
   });
 
-  // --- 12. エージェントレコードを保存 ---
-  const { error: updateError } = await supabase
-    .from('mcp_agents')
-    .update(updates)
-    .eq('id', agent_id);
+  // DB 更新
+  const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`).join(', ');
+  await db.query(
+    `UPDATE mcp_agents SET ${setClauses} WHERE id = $1`,
+    [agent_id, ...Object.values(updates)]
+  );
 
-  if (updateError) {
-    throw new Error(`エージェント更新失敗: ${updateError.message}`);
+  // Diversity Factor V4: ユニーク取引相手数を更新（シビル攻撃耐性 CVE-T1 対策）
+  await db.query(
+    `UPDATE mcp_agents SET unique_counterparty_count = get_unique_counterparties(id) WHERE id = $1`,
+    [agent_id]
+  );
+
+  // Merkle Tree 構築
+  const { rows: allAgents } = await db.query(
+    `SELECT wallet_address, trust_score FROM mcp_agents ORDER BY wallet_address`
+  );
+  const agentData = allAgents
+    .filter((a) => a.wallet_address)
+    .map((a) => ({ wallet: a.wallet_address, trustScore: a.trust_score ?? 0 }));
+  const { root: merkleRoot } = buildMerkleTree(agentData);
+
+  // オンチェーン calldata 生成
+  let onchain = null;
+  if (process.env.SBT_CONTRACT_ADDRESS && agent.wallet_address) {
+    try {
+      const { hasSbt, tokenId } = await getSbtTokenId(agent.wallet_address);
+      if (!hasSbt) {
+        onchain = {
+          action: 'mint',
+          calldata: buildMintCalldata(agent.wallet_address, updates.trust_score),
+          merkleRoot,
+          note: 'SBTが未発行のため mint を実行してください',
+        };
+      } else {
+        onchain = {
+          action: 'updateTrustScore',
+          tokenId,
+          calldata: buildUpdateTrustScoreCalldata(tokenId, merkleRoot),
+          merkleRoot,
+          note: '秘密鍵で署名して送信してください（MCP は署名しません）',
+        };
+      }
+    } catch (err) {
+      onchain = { error: err.message, merkleRoot };
+    }
+  } else {
+    onchain = { merkleRoot, note: 'SBT_CONTRACT_ADDRESS 未設定のため calldata は生成されていません' };
   }
 
   return {
@@ -174,5 +168,6 @@ export default async function handler({ agent_id, task_id, task_result, sentimen
     active_months: updates.active_months,
     avg_sentiment: Math.round(updates.avg_sentiment * 1000) / 1000,
     recent_failure_rate: Math.round(recentFailureRate * 1000) / 1000,
+    onchain,
   };
 }

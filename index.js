@@ -16,6 +16,11 @@ import listProduct from './tools/listProduct.js';
 import purchase from './tools/purchase.js';
 import confirmDelivery from './tools/confirmDelivery.js';
 import reportTxHash from './tools/reportTxHash.js';
+import openBounty from './tools/openBounty.js';
+import acceptBid from './tools/acceptBid.js';
+import submitDeliverable from './tools/submitDeliverable.js';
+import claimExpired from './tools/claimExpired.js';
+import cancelBounty from './tools/cancelBounty.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
@@ -150,6 +155,8 @@ server.tool(
     agent_wallet: z.string().describe('受注側エージェントのウォレットアドレス'),
     bid_amount: z.number().int().positive().describe('希望報酬額（JPYC）'),
     message: z.string().optional().describe('入札メッセージ（実績アピール等）'),
+    bounty_id: z.string().optional().describe('BountyEscrow バウンティID（指定時はオンチェーン submitBid calldata も返す）'),
+    deliverable_hash: z.string().optional().describe('成果物の概要ハッシュ（bytes32 hex）'),
   },
   async (args) => {
     const result = await submitBid(args);
@@ -241,6 +248,7 @@ server.tool(
     buyer_wallet: z.string().describe('買い手のウォレットアドレス（本人確認）'),
     seller_sentiment: z.number().min(0).max(1).optional().describe('買い手→売り手の評価（0.0〜1.0）'),
     buyer_sentiment: z.number().min(0).max(1).optional().describe('売り手→買い手の評価（0.0〜1.0）'),
+    bounty_id: z.string().optional().describe('BountyEscrow バウンティID（指定時は confirmDelivery calldata も返す）'),
   },
   async (args) => {
     const result = await confirmDelivery(args);
@@ -260,6 +268,80 @@ server.tool(
   },
   async (args) => {
     const result = await reportTxHash(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 15: open_bounty
+server.tool(
+  'open_bounty',
+  'バウンティを開設し BountyEscrow.openBountyFromAllowance の calldata を返す。事前に JPYC.approve が必要',
+  {
+    task_id: z.string().describe('evaluate_task で発行されたタスクID'),
+    client_wallet: z.string().describe('クライアントのウォレットアドレス'),
+    amount: z.number().int().positive().describe('バウンティ額（JPYC）'),
+    expiry_days: z.number().int().positive().optional().describe('有効期限（日数）。デフォルト30日'),
+  },
+  async (args) => {
+    const result = await openBounty(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 16: accept_bid
+server.tool(
+  'accept_bid',
+  'クライアントが入札を受諾し BountyEscrow.acceptBid の calldata を返す',
+  {
+    bounty_id: z.string().describe('open_bounty で発行されたバウンティID'),
+    bid_id: z.string().describe('受諾する入札ID'),
+    client_wallet: z.string().describe('クライアントのウォレットアドレス（本人確認）'),
+  },
+  async (args) => {
+    const result = await acceptBid(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 17: submit_deliverable
+server.tool(
+  'submit_deliverable',
+  'ワーカーが成果物ハッシュを提出し BountyEscrow.submitDeliverable の calldata を返す（ASSIGNED → SUBMITTED）',
+  {
+    bounty_id: z.string().describe('対象バウンティID'),
+    worker_wallet: z.string().describe('ワーカーのウォレットアドレス（本人確認）'),
+    deliverable_hash: z.string().describe('成果物ハッシュ（bytes32 hex、IPFS CID 等）'),
+  },
+  async (args) => {
+    const result = await submitDeliverable(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 18: claim_expired
+server.tool(
+  'claim_expired',
+  'バウンティが期限切れの場合にクライアントが JPYC を回収する BountyEscrow.claimExpired の calldata を返す',
+  {
+    bounty_id: z.string().describe('対象バウンティID'),
+    client_wallet: z.string().describe('クライアントのウォレットアドレス（本人確認）'),
+  },
+  async (args) => {
+    const result = await claimExpired(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 19: cancel_bounty
+server.tool(
+  'cancel_bounty',
+  'クライアントが OPEN 状態のバウンティをキャンセルし BountyEscrow.cancelBounty の calldata を返す',
+  {
+    bounty_id: z.string().describe('対象バウンティID'),
+    client_wallet: z.string().describe('クライアントのウォレットアドレス（本人確認）'),
+  },
+  async (args) => {
+    const result = await cancelBounty(args);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );

@@ -1,126 +1,141 @@
 /**
- * Tool 9: respond_to_offer
+ * Tool 9 (v2): respond_to_offer
  * 受注側エージェントが発注側の交渉提案に対して応答する
  *
- * 応答タイプ:
- * - accepted: 提案額を受諾 → 承認フローへ進む
- * - rejected: 提案を拒否 → 交渉終了
- * - countered: カウンターオファーを提示 → 新しい交渉ラウンドへ
+ * 状態遷移:
+ *   pending → accepted  (status: accepted)
+ *   pending → rejected  (status: rejected)
+ *   pending → countered (status: pending, agent_response: countered)
+ *   期限切れ → expired に更新してエラー
  */
-import { supabase } from '../lib/supabase.js';
+import { db } from '../lib/db.js';
+
+const HUMAN_APPROVAL_THRESHOLD = parseInt(process.env.HUMAN_APPROVAL_THRESHOLD_JPYC || '1000', 10);
+
+const VALID_TRANSITIONS = {
+  pending: ['accepted', 'rejected', 'countered'],
+};
 
 export default async function handler({ negotiation_id, response, counter_amount, message }) {
-  // 交渉データ取得
-  const { data: negotiation, error } = await supabase
-    .from('mcp_negotiations')
-    .select('*')
-    .eq('id', negotiation_id)
-    .single();
+  const { rows: negRows } = await db.query(
+    `SELECT * FROM mcp_negotiations WHERE id = $1`,
+    [negotiation_id]
+  );
+  const negotiation = negRows[0];
+  if (!negotiation) throw new Error(`交渉ID ${negotiation_id} が見つかりません`);
 
-  if (error || !negotiation) {
-    throw new Error(`交渉ID ${negotiation_id} が見つかりません`);
+  // 有効期限の lazy チェック
+  if (negotiation.expires_at && new Date(negotiation.expires_at) < new Date()) {
+    if (negotiation.status !== 'expired') {
+      await db.query(
+        `UPDATE mcp_negotiations SET status = 'expired', updated_at = NOW() WHERE id = $1`,
+        [negotiation_id]
+      );
+    }
+    throw new Error(`この交渉は有効期限切れです (expires_at: ${negotiation.expires_at})`);
   }
 
-  if (negotiation.status !== 'pending') {
-    throw new Error(`この交渉は既に ${negotiation.status} 状態です。応答できるのは pending の交渉のみです`);
+  // 状態ガード
+  const allowedResponses = VALID_TRANSITIONS[negotiation.status];
+  if (!allowedResponses) {
+    throw new Error(
+      `この交渉は ${negotiation.status} 状態です。応答できるのは pending の交渉のみです`
+    );
+  }
+  if (!allowedResponses.includes(response)) {
+    throw new Error(
+      `${negotiation.status} 状態では "${response}" は無効です。` +
+      `有効な応答: ${allowedResponses.join(' / ')}`
+    );
   }
 
-  if (negotiation.agent_response && negotiation.agent_response !== 'pending') {
-    throw new Error(`この交渉には既に応答済みです (${negotiation.agent_response})`);
-  }
-
-  // タスク取得（レンジ確認用）
-  const { data: task } = await supabase
-    .from('mcp_tasks')
-    .select('recommended_reward_min, recommended_reward_max')
-    .eq('id', negotiation.task_id)
-    .single();
+  const { rows: taskRows } = await db.query(
+    `SELECT recommended_reward_min, recommended_reward_max FROM mcp_tasks WHERE id = $1`,
+    [negotiation.task_id]
+  );
+  const task = taskRows[0];
 
   const result = {
     negotiation_id,
     response,
     previous_amount: negotiation.proposed_amount,
+    round: negotiation.round,
   };
 
   if (response === 'accepted') {
-    // 受諾 → 交渉ステータスを approved に（承認フローへ）
-    await supabase
-      .from('mcp_negotiations')
-      .update({
-        agent_response: 'accepted',
-        agent_message: message || null,
-        status: 'approved',
-      })
-      .eq('id', negotiation_id);
+    const humanRequired =
+      negotiation.human_approval_required ||
+      negotiation.proposed_amount >= HUMAN_APPROVAL_THRESHOLD;
 
-    // タスクも approved に
-    await supabase
-      .from('mcp_tasks')
-      .update({ status: 'approved' })
-      .eq('id', negotiation.task_id);
+    await db.query(
+      `UPDATE mcp_negotiations
+       SET agent_response = 'accepted', agent_message = $1, status = 'accepted', updated_at = NOW()
+       WHERE id = $2`,
+      [message || null, negotiation_id]
+    );
+    await db.query(`UPDATE mcp_tasks SET status = 'approved' WHERE id = $1`, [negotiation.task_id]);
 
     result.final_amount = negotiation.proposed_amount;
-    result.next_step = 'execute_payment';
-    result.message = `${negotiation.proposed_amount} JPYC で合意。execute_payment で送金を実行してください`;
+    result.human_approval_required = humanRequired;
 
-  } else if (response === 'rejected') {
-    // 拒否 → 交渉終了
-    await supabase
-      .from('mcp_negotiations')
-      .update({
-        agent_response: 'rejected',
-        agent_message: message || null,
-        status: 'rejected',
-      })
-      .eq('id', negotiation_id);
-
-    // 入札も rejected に
-    if (negotiation.bid_id) {
-      await supabase
-        .from('mcp_bids')
-        .update({ status: 'rejected' })
-        .eq('id', negotiation.bid_id);
+    if (humanRequired) {
+      result.next_step = 'request_human_approval';
+      result.message =
+        `${negotiation.proposed_amount} JPYC で合意。` +
+        `金額が閾値 ${HUMAN_APPROVAL_THRESHOLD} JPYC 以上のため、request_human_approval で人間承認が必要です`;
+    } else {
+      result.next_step = 'execute_payment';
+      result.message =
+        `${negotiation.proposed_amount} JPYC で合意。execute_payment で送金calldata を取得してください`;
     }
 
-    // タスクを pending に戻す（他のエージェントが入札できるように）
-    await supabase
-      .from('mcp_tasks')
-      .update({ status: 'pending' })
-      .eq('id', negotiation.task_id);
+  } else if (response === 'rejected') {
+    await db.query(
+      `UPDATE mcp_negotiations
+       SET agent_response = 'rejected', agent_message = $1, status = 'rejected', updated_at = NOW()
+       WHERE id = $2`,
+      [message || null, negotiation_id]
+    );
+    if (negotiation.bid_id) {
+      await db.query(`UPDATE mcp_bids SET status = 'rejected' WHERE id = $1`, [negotiation.bid_id]);
+    }
+    await db.query(`UPDATE mcp_tasks SET status = 'pending' WHERE id = $1`, [negotiation.task_id]);
 
     result.message = '交渉を拒否しました。タスクは再度入札可能な状態に戻りました';
     result.next_step = 'submit_bid (new agent) or propose_negotiation (revised offer)';
 
   } else if (response === 'countered') {
-    // カウンターオファー
     if (!counter_amount || counter_amount <= 0) {
       throw new Error('countered の場合は counter_amount（希望額）が必要です');
     }
-
-    // カウンター額の妥当性チェック（警告のみ）
     let warning = null;
-    if (task) {
-      if (counter_amount > task.recommended_reward_max * 1.5) {
-        warning = `カウンター額 ${counter_amount} JPYC は推奨上限の1.5倍を超えています`;
-      }
+    if (task && counter_amount > task.recommended_reward_max * 1.5) {
+      warning = `カウンター額 ${counter_amount} JPYC は推奨上限の1.5倍を超えています`;
     }
 
-    await supabase
-      .from('mcp_negotiations')
-      .update({
-        agent_response: 'countered',
-        agent_counter_amount: counter_amount,
-        agent_message: message || null,
-      })
-      .eq('id', negotiation_id);
+    // counter_history に今回のカウンターを追記
+    const history = negotiation.counter_history ?? [];
+    history.push({
+      round: negotiation.round,
+      proposed: negotiation.proposed_amount,
+      counter: counter_amount,
+      ts: new Date().toISOString(),
+    });
+
+    await db.query(
+      `UPDATE mcp_negotiations
+       SET agent_response = 'countered', agent_counter_amount = $1, agent_message = $2,
+           status = 'countered', counter_history = $3, updated_at = NOW()
+       WHERE id = $4`,
+      [counter_amount, message || null, JSON.stringify(history), negotiation_id]
+    );
 
     result.counter_amount = counter_amount;
     result.warning = warning;
-    result.message = `${counter_amount} JPYC でカウンターオファーを提示しました。発注側は propose_negotiation で再提案するか、この額で合意できます`;
-    result.next_step = 'propose_negotiation (round 2) or request_human_approval (accept counter)';
-
-  } else {
-    throw new Error(`無効な応答: ${response}。accepted / rejected / countered のいずれかを指定してください`);
+    result.message =
+      `${counter_amount} JPYC でカウンターオファーを提示しました。` +
+      `発注側は propose_negotiation で再提案するか、この額を承認できます`;
+    result.next_step = 'propose_negotiation (next round)';
   }
 
   return result;

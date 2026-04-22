@@ -1,11 +1,8 @@
 /**
  * Tool 12 (v2): purchase — ノンカストディアル
- *
- * MCPはエスクロー送金のトランザクション指示を返すだけ。
- * 実際の送金はエージェント（買い手）が自分で署名・送信する。
- * 送信後に report_tx_hash で結果を報告する。
+ * エスクロー送金のトランザクション指示を返す
  */
-import { supabase } from '../lib/supabase.js';
+import { db } from '../lib/db.js';
 import { buildTransferFromInstruction } from '../lib/txBuilder.js';
 
 const ESCROW_ADDRESS = process.env.ESCROW_WALLET_ADDRESS || '0x0000000000000000000000000000000000000000';
@@ -13,106 +10,53 @@ const ESCROW_ADDRESS = process.env.ESCROW_WALLET_ADDRESS || '0x00000000000000000
 export default async function handler({ product_id, buyer_wallet }) {
   const normalized = buyer_wallet.toLowerCase();
 
-  // 商品取得
-  const { data: product, error: prodError } = await supabase
-    .from('mcp_products')
-    .select('*')
-    .eq('id', product_id)
-    .single();
+  const { rows: prodRows } = await db.query(`SELECT * FROM mcp_products WHERE id = $1`, [product_id]);
+  const product = prodRows[0];
+  if (!product) throw new Error(`商品ID ${product_id} が見つかりません`);
+  if (!product.active) throw new Error('この商品は現在販売停止中です');
+  if (product.seller_wallet === normalized) throw new Error('自分の商品は購入できません');
 
-  if (prodError || !product) {
-    throw new Error(`商品ID ${product_id} が見つかりません`);
-  }
-
-  if (product.status !== 'active') {
-    throw new Error(`この商品は現在 ${product.status} 状態です`);
-  }
-
-  if (product.stock === 0) {
-    throw new Error('在庫切れです');
-  }
-
-  if (product.seller_wallet === normalized) {
-    throw new Error('自分の商品は購入できません');
-  }
-
-  // 買い手プロファイル確認（なければ作成）
-  let { data: buyer } = await supabase
-    .from('mcp_agents')
-    .select('id, buyer_score, buyer_total_count')
-    .eq('wallet_address', normalized)
-    .maybeSingle();
-
+  let { rows: buyerRows } = await db.query(
+    `SELECT id, buyer_score, buyer_total_count FROM mcp_agents WHERE wallet_address = $1`,
+    [normalized]
+  );
+  let buyer = buyerRows[0] ?? null;
   if (!buyer) {
-    const { data: newBuyer } = await supabase
-      .from('mcp_agents')
-      .insert({ wallet_address: normalized })
-      .select('id, buyer_score, buyer_total_count')
-      .single();
-    buyer = newBuyer;
+    const { rows: inserted } = await db.query(
+      `INSERT INTO mcp_agents (wallet_address) VALUES ($1) RETURNING id, buyer_score, buyer_total_count`,
+      [normalized]
+    );
+    buyer = inserted[0];
   }
 
-  // 売り手情報
-  const { data: seller } = await supabase
-    .from('mcp_agents')
-    .select('seller_score, seller_total_count')
-    .eq('wallet_address', product.seller_wallet)
-    .maybeSingle();
+  const { rows: sellerRows } = await db.query(
+    `SELECT seller_score, seller_total_count FROM mcp_agents WHERE wallet_address = $1`,
+    [product.seller_wallet]
+  );
+  const seller = sellerRows[0] ?? null;
 
-  // エスクロー送金の指示を生成（MCPは実行しない）
-  const escrowInstruction = buildTransferFromInstruction(
-    normalized,
-    ESCROW_ADDRESS,
-    product.price
+  const escrowInstruction = buildTransferFromInstruction(normalized, ESCROW_ADDRESS, product.price);
+
+  const { rows: orderRows } = await db.query(
+    `INSERT INTO mcp_orders (product_id, seller_wallet, buyer_wallet, amount, status)
+     VALUES ($1, $2, $3, $4, 'pending')
+     RETURNING id`,
+    [product_id, product.seller_wallet, normalized, product.price]
+  );
+  if (!orderRows[0]) throw new Error('注文作成失敗');
+
+  await db.query(
+    `UPDATE mcp_agents SET buyer_total_count = COALESCE(buyer_total_count, 0) + 1 WHERE wallet_address = $1`,
+    [normalized]
+  );
+  await db.query(
+    `UPDATE mcp_agents SET seller_total_count = COALESCE(seller_total_count, 0) + 1 WHERE wallet_address = $1`,
+    [product.seller_wallet]
   );
 
-  // 注文作成（pending — エスクロー送金はまだ）
-  const { data: order, error: orderError } = await supabase
-    .from('mcp_orders')
-    .insert({
-      product_id,
-      seller_wallet: product.seller_wallet,
-      buyer_wallet: normalized,
-      amount: product.price,
-      status: 'pending',
-      escrow_tx_hash: null, // エージェントが送信後に報告
-    })
-    .select('id')
-    .single();
-
-  if (orderError) {
-    throw new Error(`注文作成失敗: ${orderError.message}`);
-  }
-
-  // 在庫を減らす（-1 = 無限の場合はスキップ）
-  if (product.stock > 0) {
-    const newStock = product.stock - 1;
-    await supabase
-      .from('mcp_products')
-      .update({
-        stock: newStock,
-        status: newStock === 0 ? 'sold_out' : 'active',
-      })
-      .eq('id', product_id);
-  }
-
-  // 買い手のtotal_countをインクリメント
-  await supabase
-    .from('mcp_agents')
-    .update({ buyer_total_count: (buyer.buyer_total_count || 0) + 1 })
-    .eq('wallet_address', normalized);
-
-  // 売り手のtotal_countをインクリメント
-  if (seller) {
-    await supabase
-      .from('mcp_agents')
-      .update({ seller_total_count: (seller.seller_total_count || 0) + 1 })
-      .eq('wallet_address', product.seller_wallet);
-  }
-
   return {
-    order_id: order.id,
-    product_name: product.name,
+    order_id: orderRows[0].id,
+    product_name: product.title,
     amount: product.price,
     buyer_wallet: normalized,
     seller_wallet: product.seller_wallet,

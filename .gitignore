@@ -1,3 +1,31 @@
+# Dependencies
 node_modules/
+
+# Environment (secrets must never be committed)
 .env
 .env.local
+.env.*.local
+.env.production
+.env.development
+
+# macOS / editor metadata
+.DS_Store
+*.swp
+*.swo
+
+# Logs / runtime
+*.log
+npm-debug.log*
+.claude_code_session
+
+# Hardhat / Solidity build artifacts (secondary guard; contracts/.gitignore also covers these)
+contracts/artifacts/
+contracts/cache/
+contracts/deployments/*.json
+contracts/typechain-types/
+contracts/coverage.json
+contracts/.env
+
+# Coverage
+coverage/
+.nyc_output/

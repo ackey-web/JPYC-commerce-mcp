@@ -1,11 +1,36 @@
 {
-  "name": "gifterra-commerce-mcp",
+  "name": "jpyc-commerce-mcp",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "migrate": "node scripts/migrate.js",
+    "preflight": "node scripts/preflight-check.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
-    "@modelcontextprotocol/sdk": "latest",
-    "@supabase/supabase-js": "latest",
-    "dotenv": "^17.4.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^17.4.0",
+    "ethers": "^6.13.0",
+    "keccak256": "^1.0.6",
+    "merkletreejs": "^0.4.0",
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "pg-mem": "^3.0.14"
+  },
+  "jest": {
+    "transform": {},
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/test-*.js",
+      "**/tests/**/*.test.js"
+    ],
+    "testTimeout": 30000
   }
 }
