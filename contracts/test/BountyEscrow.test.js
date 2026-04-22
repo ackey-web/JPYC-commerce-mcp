@@ -20,21 +20,21 @@ const JobStatus = { OPEN: 0n, ASSIGNED: 1n, SUBMITTED: 2n, RELEASED: 3n, AUTO_RE
 // ─── フィクスチャ ─────────────────────────────────────────────────────────────
 
 async function deployFixture() {
-  const [admin, client, worker, attacker, other, feeRecipient] = await ethers.getSigners();
+  const [admin, client, worker, attacker, other] = await ethers.getSigners();
 
   const MockJPYC = await ethers.getContractFactory('MockJPYC');
   const jpyc = await MockJPYC.deploy();
   await jpyc.waitForDeployment();
 
   const BountyEscrow = await ethers.getContractFactory('BountyEscrow');
-  const escrow = await BountyEscrow.deploy(admin.address, await jpyc.getAddress(), feeRecipient.address);
+  const escrow = await BountyEscrow.deploy(admin.address, await jpyc.getAddress());
   await escrow.waitForDeployment();
 
   // client に 10,000 JPYC を mint して approve
   await jpyc.mint(client.address, ethers.parseUnits('10000', 18));
   await jpyc.connect(client).approve(await escrow.getAddress(), ethers.MaxUint256);
 
-  return { escrow, jpyc, admin, client, worker, attacker, other, feeRecipient };
+  return { escrow, jpyc, admin, client, worker, attacker, other };
 }
 
 // ─── ヘルパー: openBounty まで進める ─────────────────────────────────────────
@@ -81,14 +81,9 @@ describe('BountyEscrow', function () {
       expect(await escrow.jpyc()).to.equal(await jpyc.getAddress());
     });
 
-    it('PROTOCOL_FEE_BPS は 10 (0.1%) 固定', async function () {
+    it('PROTOCOL_FEE_BPS は 0 固定', async function () {
       const { escrow } = await deployFixture();
-      expect(await escrow.PROTOCOL_FEE_BPS()).to.equal(10n);
-    });
-
-    it('FEE_RECIPIENT が immutable に設定される', async function () {
-      const { escrow, feeRecipient } = await deployFixture();
-      expect(await escrow.FEE_RECIPIENT()).to.equal(feeRecipient.address);
+      expect(await escrow.PROTOCOL_FEE_BPS()).to.equal(0n);
     });
 
     it('CLAIM_TIMEOUT は 90 日', async function () {
@@ -108,20 +103,17 @@ describe('BountyEscrow', function () {
       expect(escrow.interface.getFunction('emergencyWithdraw')).to.be.null;
     });
 
-    it('ゼロアドレスの admin / jpyc / feeRecipient は revert', async function () {
+    it('ゼロアドレスの admin / jpyc は revert', async function () {
       const BountyEscrow = await ethers.getContractFactory('BountyEscrow');
-      const [admin, , , , , feeRecipient] = await ethers.getSigners();
+      const [admin] = await ethers.getSigners();
       const MockJPYC = await ethers.getContractFactory('MockJPYC');
       const jpyc = await MockJPYC.deploy();
       await jpyc.waitForDeployment();
-      const jpycAddr = await jpyc.getAddress();
 
-      await expect(BountyEscrow.deploy(ethers.ZeroAddress, jpycAddr, feeRecipient.address))
+      await expect(BountyEscrow.deploy(ethers.ZeroAddress, await jpyc.getAddress()))
         .to.be.revertedWith('ZeroAdmin');
-      await expect(BountyEscrow.deploy(admin.address, ethers.ZeroAddress, feeRecipient.address))
+      await expect(BountyEscrow.deploy(admin.address, ethers.ZeroAddress))
         .to.be.revertedWith('ZeroJPYC');
-      await expect(BountyEscrow.deploy(admin.address, jpycAddr, ethers.ZeroAddress))
-        .to.be.revertedWithCustomError(BountyEscrow, 'FeeRecipientZero');
     });
   });
 
@@ -326,18 +318,15 @@ describe('BountyEscrow', function () {
   // ── 7. confirmDelivery ────────────────────────────────────────────────────
 
   describe('confirmDelivery', function () {
-    it('クライアントが確認し JPYC がワーカー（fee 差引後）と FEE_RECIPIENT に支払われる', async function () {
-      const { escrow, jpyc, client, worker, feeRecipient } = await deployFixture();
+    it('クライアントが確認し JPYC がワーカーに支払われる', async function () {
+      const { escrow, jpyc, client, worker } = await deployFixture();
       await submitJob(escrow, jpyc, client, worker);
       const workerBefore = await jpyc.balanceOf(worker.address);
-
-      const expectedFee    = AMOUNT * 10n / 10_000n;
-      const expectedWorker = AMOUNT - expectedFee;
 
       await expect(escrow.connect(client).confirmDelivery(JOB_KEY))
         .to.emit(escrow, 'DeliveryConfirmed').withArgs(1n, worker.address, AMOUNT);
 
-      expect(await jpyc.balanceOf(worker.address)).to.equal(workerBefore + expectedWorker);
+      expect(await jpyc.balanceOf(worker.address)).to.equal(workerBefore + AMOUNT);
       expect(await jpyc.balanceOf(await escrow.getAddress())).to.equal(0n);
       const job = await escrow.getJob(JOB_KEY);
       expect(job.status).to.equal(JobStatus.RELEASED);
@@ -369,20 +358,17 @@ describe('BountyEscrow', function () {
   // ── 8. claimExpired (90日タイムロック) ────────────────────────────────────
 
   describe('claimExpired', function () {
-    it('90日後にワーカーが自動払出できる（fee 差引後）', async function () {
+    it('90日後にワーカーが自動払出できる', async function () {
       const { escrow, jpyc, client, worker } = await deployFixture();
       await submitJob(escrow, jpyc, client, worker);
       const workerBefore = await jpyc.balanceOf(worker.address);
 
       await time.increase(CLAIM_TIMEOUT + 1);
 
-      const expectedFee    = AMOUNT * 10n / 10_000n;
-      const expectedWorker = AMOUNT - expectedFee;
-
       await expect(escrow.connect(worker).claimExpired(JOB_KEY))
         .to.emit(escrow, 'AutoReleased');
 
-      expect(await jpyc.balanceOf(worker.address)).to.equal(workerBefore + expectedWorker);
+      expect(await jpyc.balanceOf(worker.address)).to.equal(workerBefore + AMOUNT);
       const job = await escrow.getJob(JOB_KEY);
       expect(job.status).to.equal(JobStatus.AUTO_RELEASED);
     });
@@ -636,110 +622,7 @@ describe('BountyEscrow', function () {
     });
   });
 
-  // ── 14. Fee Logic (v2.1 + Fee) ───────────────────────────────────────────
-
-  describe('fee logic', function () {
-    it('confirmDelivery でフィー (0.1%) が FEE_RECIPIENT に送られる', async function () {
-      const { escrow, jpyc, client, worker, feeRecipient } = await deployFixture();
-      await submitJob(escrow, jpyc, client, worker);
-
-      const feeBalBefore    = await jpyc.balanceOf(feeRecipient.address);
-      const workerBalBefore = await jpyc.balanceOf(worker.address);
-
-      const expectedFee    = AMOUNT * 10n / 10_000n; // 0.1%
-      const expectedWorker = AMOUNT - expectedFee;
-
-      await expect(escrow.connect(client).confirmDelivery(JOB_KEY))
-        .to.emit(escrow, 'ProtocolFeeDistributed')
-        .withArgs(1n, feeRecipient.address, expectedFee);
-
-      expect(await jpyc.balanceOf(feeRecipient.address) - feeBalBefore).to.equal(expectedFee);
-      expect(await jpyc.balanceOf(worker.address) - workerBalBefore).to.equal(expectedWorker);
-    });
-
-    it('claimExpired でフィー (0.1%) が FEE_RECIPIENT に送られる', async function () {
-      const { escrow, jpyc, client, worker, feeRecipient } = await deployFixture();
-      await submitJob(escrow, jpyc, client, worker);
-
-      await time.increase(CLAIM_TIMEOUT + 1);
-
-      const feeBalBefore    = await jpyc.balanceOf(feeRecipient.address);
-      const workerBalBefore = await jpyc.balanceOf(worker.address);
-
-      const expectedFee    = AMOUNT * 10n / 10_000n;
-      const expectedWorker = AMOUNT - expectedFee;
-
-      await expect(escrow.connect(worker).claimExpired(JOB_KEY))
-        .to.emit(escrow, 'ProtocolFeeDistributed')
-        .withArgs(1n, feeRecipient.address, expectedFee);
-
-      expect(await jpyc.balanceOf(feeRecipient.address) - feeBalBefore).to.equal(expectedFee);
-      expect(await jpyc.balanceOf(worker.address) - workerBalBefore).to.equal(expectedWorker);
-    });
-
-    it('cancelBounty はフィーなし — 全額 client に返金される', async function () {
-      const { escrow, jpyc, client, feeRecipient } = await deployFixture();
-      await openJob(escrow, client);
-
-      const feeBalBefore    = await jpyc.balanceOf(feeRecipient.address);
-      const clientBalBefore = await jpyc.balanceOf(client.address);
-
-      await escrow.connect(client).cancelBounty(JOB_KEY);
-
-      expect(await jpyc.balanceOf(feeRecipient.address) - feeBalBefore).to.equal(0n);
-      expect(await jpyc.balanceOf(client.address) - clientBalBefore).to.equal(AMOUNT);
-    });
-
-    it('fee + workerAmt の合計が amount と一致する（端数なし）', async function () {
-      // 500 JPYC: fee = 500 * 10 / 10000 = 0.5 JPYC (整数除算で 0 になる小さな値もチェック)
-      const { escrow, jpyc, client, worker, feeRecipient } = await deployFixture();
-      await submitJob(escrow, jpyc, client, worker);
-
-      const escrowBefore = await jpyc.balanceOf(await escrow.getAddress());
-      await escrow.connect(client).confirmDelivery(JOB_KEY);
-      const escrowAfter  = await jpyc.balanceOf(await escrow.getAddress());
-
-      // エスクロー残高が AMOUNT 分減少している（fee + worker = amount）
-      expect(escrowBefore - escrowAfter).to.equal(AMOUNT);
-    });
-
-    it('フィー計算: 1 wei では fee = 0（整数除算で端数切り捨て）', async function () {
-      const [admin, client, worker, , , feeRecipient] = await ethers.getSigners();
-      const MockJPYC = await ethers.getContractFactory('MockJPYC');
-      const jpyc = await MockJPYC.deploy();
-      await jpyc.waitForDeployment();
-      const BountyEscrow = await ethers.getContractFactory('BountyEscrow');
-      const escrow = await BountyEscrow.deploy(admin.address, await jpyc.getAddress(), feeRecipient.address);
-      await escrow.waitForDeployment();
-
-      // 1 wei * 10 / 10000 = 0（整数除算）→ fee = 0、全額ワーカーへ
-      const tinyAmount = 1n;
-      await jpyc.mint(client.address, tinyAmount);
-      await jpyc.connect(client).approve(await escrow.getAddress(), ethers.MaxUint256);
-
-      const jobKey = ethers.keccak256(ethers.toUtf8Bytes('tiny-job'));
-      await escrow.connect(client).openBounty(jobKey, tinyAmount);
-
-      const bidTx = await escrow.connect(worker).submitBid(jobKey, tinyAmount, PROPOSAL_HASH);
-      const bidReceipt = await bidTx.wait();
-      const bidEvent = bidReceipt.logs.find(l => {
-        try { return escrow.interface.parseLog(l).name === 'BidSubmitted'; } catch { return false; }
-      });
-      const bidId = escrow.interface.parseLog(bidEvent).args.bidId;
-      await escrow.connect(client).acceptBid(jobKey, bidId);
-      await escrow.connect(worker).submitDeliverable(jobKey, DELIVERABLE);
-
-      const feeBalBefore    = await jpyc.balanceOf(feeRecipient.address);
-      const workerBalBefore = await jpyc.balanceOf(worker.address);
-
-      await escrow.connect(client).confirmDelivery(jobKey);
-
-      expect(await jpyc.balanceOf(feeRecipient.address) - feeBalBefore).to.equal(0n);
-      expect(await jpyc.balanceOf(worker.address) - workerBalBefore).to.equal(tinyAmount);
-    });
-  });
-
-  // ── 15. schedulePause 重複防止 (v2.1) ─────────────────────────────────────
+  // ── 14. schedulePause 重複防止 (v2.1) ────────────────────────────────────
 
   describe('schedulePause duplicate prevention', function () {
     it('schedulePause を二重呼び出しすると PauseAlreadyScheduled で revert', async function () {

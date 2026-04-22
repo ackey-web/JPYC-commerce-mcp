@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @dev 設計原則（絶対厳守）:
  *   - ノンカストディアル最大強度: admin withdraw 関数は存在しない
  *   - immutable コントラクト: upgradeable proxy 禁止
- *   - protocolFeeBps = 10 (0.1%) 固定、変更は新コントラクトデプロイ方式
+ *   - protocolFeeBps = 0 で固定（変更は新コントラクトデプロイ方式）
  *   - pause は 48 時間タイムロック遅延（緊急時のみ）
  *   - dispute/仲裁: Phase 0+ では未実装（期限失効による自動解決のみ）
  *   - EIP-3009 対応: JPYC v2 transferWithAuthorization でガスレス送金
@@ -35,8 +35,8 @@ contract BountyEscrow is ReentrancyGuard {
     /// @notice pause 有効化に必要なタイムロック（緊急時のみ使用）
     uint64 public constant PAUSE_TIMELOCK = 48 hours;
 
-    /// @notice プロトコルフィー = 0.1%（immutable 固定、変更は新コントラクトデプロイ）
-    uint256 public constant PROTOCOL_FEE_BPS = 10;
+    /// @notice プロトコルフィー = 0（immutable 固定、変更は新コントラクトデプロイ）
+    uint256 public constant PROTOCOL_FEE_BPS = 0;
 
     // ─── immutable ────────────────────────────────────────────────────────────
 
@@ -45,9 +45,6 @@ contract BountyEscrow is ReentrancyGuard {
 
     /// @notice コントラクト管理者（multisig 推奨、pause タイムロック発動権限のみ）
     address public immutable admin;
-
-    /// @notice プロトコルフィー送金先（DAO Treasury Gnosis Safe 2-of-3）
-    address public immutable FEE_RECIPIENT;
 
     // ─── ステート ─────────────────────────────────────────────────────────────
 
@@ -116,13 +113,11 @@ contract BountyEscrow is ReentrancyGuard {
     error ClaimTimelockActive(uint64 jobId, uint64 availableAt);
     error ZeroAmount();
     error TransferFailed();
-    error FeeRecipientZero();
 
     // ─── イベント ─────────────────────────────────────────────────────────────
 
     event BountyOpened(uint64 indexed jobId, bytes32 indexed jobKey, address indexed client, uint128 amount);
     event BountyCancelled(uint64 indexed jobId, address indexed client);
-    event ProtocolFeeDistributed(uint64 indexed jobId, address indexed feeRecipient, uint256 feeAmount);
     event BidSubmitted(uint64 indexed bidId, uint64 indexed jobId, address indexed bidder, uint128 bidAmount);
     event BidAccepted(uint64 indexed jobId, uint64 indexed bidId, address worker);
     event DeliverableSubmitted(uint64 indexed jobId, address indexed worker, bytes32 deliverableHash);
@@ -153,17 +148,14 @@ contract BountyEscrow is ReentrancyGuard {
     // ─── コンストラクタ ────────────────────────────────────────────────────────
 
     /**
-     * @param _admin        管理者アドレス（multisig 推奨、pause タイムロック発動のみ）
-     * @param _jpyc         JPYC v2 コントラクトアドレス（Polygon mainnet / Amoy testnet）
-     * @param _feeRecipient プロトコルフィー送金先（DAO Treasury Gnosis Safe 2-of-3）
+     * @param _admin 管理者アドレス（multisig 推奨、pause タイムロック発動のみ）
+     * @param _jpyc  JPYC v2 コントラクトアドレス（Polygon mainnet / Amoy testnet）
      */
-    constructor(address _admin, address _jpyc, address _feeRecipient) {
-        require(_admin        != address(0), "ZeroAdmin");
-        require(_jpyc         != address(0), "ZeroJPYC");
-        if (_feeRecipient == address(0)) revert FeeRecipientZero();
-        admin        = _admin;
-        jpyc         = _jpyc;
-        FEE_RECIPIENT = _feeRecipient;
+    constructor(address _admin, address _jpyc) {
+        require(_admin != address(0), "ZeroAdmin");
+        require(_jpyc  != address(0), "ZeroJPYC");
+        admin = _admin;
+        jpyc  = _jpyc;
         _nextJobId = 1;
         _nextBidId = 1;
     }
@@ -350,7 +342,7 @@ contract BountyEscrow is ReentrancyGuard {
         address worker = j.worker;
 
         // Interaction
-        _distributePayout(jobId, amount, worker);
+        _safeTransfer(worker, amount);
         emit DeliveryConfirmed(jobId, worker, amount);
     }
 
@@ -378,7 +370,7 @@ contract BountyEscrow is ReentrancyGuard {
         address worker = j.worker;
 
         // Interaction
-        _distributePayout(jobId, amount, worker);
+        _safeTransfer(worker, amount);
         emit AutoReleased(jobId, worker, amount, uint64(block.timestamp));
     }
 
@@ -470,20 +462,6 @@ contract BountyEscrow is ReentrancyGuard {
     function _requireJobId(bytes32 jobKey) internal view returns (uint64 jobId) {
         jobId = _keyToId[jobKey];
         if (jobId == 0) revert JobNotFound(jobKey);
-    }
-
-    /**
-     * @dev プロトコルフィーを FEE_RECIPIENT に送り、残額をワーカーに送る。
-     *      cancelBounty は fee 不要（全額 client 返金）なのでこの関数は使わない。
-     */
-    function _distributePayout(uint64 jobId, uint128 amount, address worker) internal {
-        uint256 fee        = (uint256(amount) * PROTOCOL_FEE_BPS) / 10_000;
-        uint256 workerAmt  = uint256(amount) - fee;
-        if (fee > 0) {
-            _safeTransfer(FEE_RECIPIENT, fee);
-            emit ProtocolFeeDistributed(jobId, FEE_RECIPIENT, fee);
-        }
-        _safeTransfer(worker, workerAmt);
     }
 
     /// @dev ERC-20 safeTransfer（return value チェック付き、OZ SafeERC20 相当）
