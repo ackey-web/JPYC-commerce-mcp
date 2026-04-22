@@ -1,4 +1,4 @@
-#\!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * scripts/migrate.js — Neon マイグレーション実行
  *
@@ -17,7 +17,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const { Pool } = pg;
 
-if (\!process.env.DATABASE_URL) {
+if (!process.env.DATABASE_URL) {
   console.error('[migrate] DATABASE_URL が設定されていません');
   process.exit(1);
 }
@@ -29,6 +29,8 @@ const pool = new Pool({
 
 const migrations = [
   join(__dirname, '../migrations/001_init.sql'),
+  join(__dirname, '../migrations/004_create_mcp_merkle_commits.sql'),
+  join(__dirname, '../migrations/005_diversity_factor.sql'),
 ];
 
 async function run() {
