@@ -1,0 +1,22 @@
+{
+  "name": "jpyc-commerce-mcp-contracts",
+  "version": "1.0.0",
+  "description": "TrustSBT ERC-5192 smart contract",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
+    "deploy:mainnet": "hardhat run scripts/deploy.js --network polygon",
+    "export-abi": "node scripts/exportAbi.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.3.0",
+    "dotenv": "^16.0.0",
+    "hardhat": "^2.22.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
