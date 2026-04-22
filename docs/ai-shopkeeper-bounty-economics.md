@@ -487,7 +487,7 @@ function submitDeliverable(bytes32 jobKey, bytes32 deliverableHash) external;
  * @notice 納品を確認し、エスクローを受注者に解放する（SUBMITTED → CONFIRMED）
  * @param jobKey  対象バウンティ ID
  *
- * 効果: reward × 99.9% を受注者に転送、reward × 0.1% を FEE_RECIPIENT（DAO Safe）へ
+ * 効果: reward を受注者に全額転送（Phase 0+: PROTOCOL_FEE_BPS = 0 のため fee なし）
  *       MCP が update_agent_record を呼び出して双方の trust_score を更新
  */
 function confirmDelivery(bytes32 jobKey) external;
@@ -496,7 +496,7 @@ function confirmDelivery(bytes32 jobKey) external;
  * @notice 期限切れまたは自動解放を実行する
  * @param jobKey  対象バウンティ ID
  *
- * ケース1（SUBMITTED 状態が 90 日経過）: reward × 99.9% を受注者に自動解放、0.1% → DAO Safe
+ * ケース1（SUBMITTED 状態が 90 日経過）: reward を受注者に自動解放（Phase 0+: fee なし、全額）
  * ケース2（OPEN/ASSIGNED 状態が expiresAt 経過）: reward 全額を依頼主に返還（fee ゼロ）
  *
  * Phase 0+ では dispute 仲裁なし。時限失効のみで紛争を解決する設計。
