@@ -356,8 +356,7 @@ mcp call confirm_delivery_bounty '{
 **検証項目:**
 - [ ] `calldata` に `confirmDelivery` セレクタ `0x74950ffd` が含まれる
 - [ ] A がブロードキャスト → `jobs[jobKey].status == RELEASED(4)` を確認
-- [ ] B の JPYC 残高が **入札額 × 99.9%**（480 × 0.999 = 479.52 JPYC）増加していることを確認
-- [ ] `FEE_RECIPIENT`（DAO Treasury）の JPYC 残高が **入札額 × 0.1%**（0.48 JPYC）増加していることを確認
+- [ ] B の JPYC 残高が入札額（480 JPYC）増加していることを確認
 - [ ] `BountyReleased` イベントが emit されていることを確認
 
 ---
@@ -402,8 +401,7 @@ mcp call claim_expired '{
 - [ ] `calldata` に `claimExpired` セレクタ `0xb16e1343` が含まれる
 - [ ] Hardhat テストで `time.increase(90 * 24 * 3600 + 1)` 後に呼び出すと成功
 - [ ] `jobs[jobKey].status == AUTO_RELEASED(5)` を確認（Hardhat）
-- [ ] ワーカー B の JPYC 残高が **入金額 × 99.9%** 増加することを確認（Hardhat）
-- [ ] `FEE_RECIPIENT`（DAO Treasury）の JPYC 残高が **入金額 × 0.1%** 増加することを確認（Hardhat）
+- [ ] ワーカー B の JPYC 残高が増加することを確認（Hardhat）
 - [ ] 90 日前に `claimExpired` を呼ぶと `revert NotExpired` になることを確認（Hardhat）
 
 ### B-2-6: SBT 更新（claimExpired 後）
@@ -446,8 +444,7 @@ mcp call cancel_bounty '{
 - [ ] `calldata` に `cancelBounty` セレクタが含まれる
 - [ ] A がブロードキャスト → Amoy でトランザクション成功
 - [ ] `jobs[jobKey].status == CANCELLED(6)` を確認
-- [ ] A の JPYC 残高が元の入金額（**500 JPYC 全額**）返還されていることを確認（fee 控除なし）
-- [ ] `FEE_RECIPIENT`（DAO Treasury）の JPYC 残高が**変化しない**ことを確認
+- [ ] A の JPYC 残高が元の入金額（500 JPYC）分返還されていることを確認
 - [ ] `BountyCancelled` イベントが emit されていることを確認
 
 ---
