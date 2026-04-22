@@ -19,8 +19,24 @@ export default async function handler({ payment_id, order_id, type, tx_hash }) {
     if (!payment) throw new Error(`送金ID ${payment_id} が見つかりません`);
     if (payment.tx_hash) throw new Error(`この送金には既にtx_hashが登録されています: ${payment.tx_hash}`);
 
-    await db.query(`UPDATE mcp_payments SET tx_hash = $1 WHERE id = $2`, [tx_hash, payment_id]);
-    return { type: 'payment', payment_id, tx_hash, message: 'トランザクションハッシュを記録しました' };
+    await db.query(
+      `UPDATE mcp_payments SET tx_hash = $1, status = 'confirmed' WHERE id = $2`,
+      [tx_hash, payment_id]
+    );
+
+    // negotiation の status を paid に遷移
+    const { rows: pmtRows } = await db.query(
+      `SELECT negotiation_id FROM mcp_payments WHERE id = $1`,
+      [payment_id]
+    );
+    if (pmtRows[0]?.negotiation_id) {
+      await db.query(
+        `UPDATE mcp_negotiations SET status = 'paid', updated_at = NOW() WHERE id = $1 AND status = 'accepted'`,
+        [pmtRows[0].negotiation_id]
+      );
+    }
+
+    return { type: 'payment', payment_id, tx_hash, status: 'paid', message: 'トランザクションハッシュを記録しました。confirm_delivery で受取確認してください' };
   }
 
   if (order_id) {

@@ -31,6 +31,7 @@ const migrations = [
   join(__dirname, '../migrations/001_init.sql'),
   join(__dirname, '../migrations/004_create_mcp_merkle_commits.sql'),
   join(__dirname, '../migrations/005_diversity_factor.sql'),
+  join(__dirname, '../migrations/006_negotiation_workflow.sql'),
 ];
 
 async function run() {
