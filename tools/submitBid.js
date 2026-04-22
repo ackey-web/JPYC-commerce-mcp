@@ -1,10 +1,12 @@
 /**
  * Tool 8 (v2): submit_bid
- * 受注側エージェントがタスクに対して入札する
+ * 受注側エージェントがタスクに対して入札する。
+ * bounty_id が指定された場合は BountyEscrow.submitBid の calldata も返す（ノンカストディアル）。
  */
 import { db } from '../lib/db.js';
+import { buildSubmitBidInstruction } from '../lib/bountyCalldataBuilder.js';
 
-export default async function handler({ task_id, agent_wallet, bid_amount, message }) {
+export default async function handler({ task_id, agent_wallet, bid_amount, message, bounty_id, deliverable_hash }) {
   const normalized = agent_wallet.toLowerCase();
 
   const { rows: taskRows } = await db.query(`SELECT * FROM mcp_tasks WHERE id = $1`, [task_id]);
@@ -63,10 +65,40 @@ export default async function handler({ task_id, agent_wallet, bid_amount, messa
   );
   if (!bidRows[0]) throw new Error('入札記録失敗');
 
-  return {
+  const result = {
     bid_id: bidRows[0].id, task_id, agent_wallet: normalized, bid_amount: finalBidAmount,
     bid_source: bidSource, max_bid_amount: maxBid, trust_score: agent.trust_score,
     recommended_range: { min: task.recommended_reward_min, max: task.recommended_reward_max },
     warning,
   };
+
+  // BountyEscrow フロー：bounty_id が指定されている場合はオンチェーン入札 calldata も返す
+  if (bounty_id) {
+    const { rows: bountyRows } = await db.query(
+      `SELECT * FROM mcp_bounties WHERE id = $1 AND status = 'open'`,
+      [bounty_id]
+    );
+    const bounty = bountyRows[0];
+    if (!bounty) throw new Error(`バウンティID ${bounty_id} が見つからないか open 状態ではありません`);
+    if (!bounty.job_key) {
+      throw new Error('job_key が未設定です。openBounty トランザクション後に report_tx_hash で登録してください');
+    }
+
+    // mcp_bounty_bids に記録
+    await db.query(
+      `INSERT INTO mcp_bounty_bids (bounty_id, bidder_wallet, bid_amount, deliverable_hash, status)
+       VALUES ($1, $2, $3, $4, 'pending')`,
+      [bounty_id, normalized, finalBidAmount, deliverable_hash || null]
+    );
+
+    result.bounty_id = bounty_id;
+    result.tx_instruction = buildSubmitBidInstruction(
+      bounty.job_key,
+      finalBidAmount,
+      deliverable_hash || '0x' + '0'.repeat(64)
+    );
+    result.next_step = 'tx_instruction のトランザクションを実行後、report_tx_hash で onchain_bid_id を登録してください';
+  }
+
+  return result;
 }

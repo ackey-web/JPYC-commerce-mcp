@@ -3,14 +3,16 @@
  *
  * 買い手が受取確認 → エスクロー解放の指示を返す。
  * MCPはトランザクションを実行しない。
+ * bounty_id が指定された場合は BountyEscrow.confirmDelivery の calldata を返す。
  */
 import { db } from '../lib/db.js';
 import { calculateRoleScore } from '../lib/trustScore.js';
 import { buildTransferFromInstruction } from '../lib/txBuilder.js';
+import { buildConfirmDeliveryInstruction } from '../lib/bountyCalldataBuilder.js';
 
 const ESCROW_ADDRESS = process.env.ESCROW_WALLET_ADDRESS || '0x0000000000000000000000000000000000000000';
 
-export default async function handler({ order_id, buyer_wallet, seller_sentiment, buyer_sentiment }) {
+export default async function handler({ order_id, buyer_wallet, seller_sentiment, buyer_sentiment, bounty_id }) {
   const normalized = buyer_wallet.toLowerCase();
 
   const { rows: orderRows } = await db.query(`SELECT * FROM mcp_orders WHERE id = $1`, [order_id]);
@@ -96,7 +98,7 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
     );
   }
 
-  return {
+  const result = {
     order_id,
     amount: order.amount,
     seller_wallet: order.seller_wallet,
@@ -107,4 +109,30 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
     buyer_score_updated: !!buyer,
     next_step: 'エスクロー管理者が release_instruction のトランザクションを実行し、完了後に注文ステータスを completed に更新してください',
   };
+
+  // BountyEscrow フロー：bounty_id が指定された場合はオンチェーン confirmDelivery calldata も返す
+  if (bounty_id) {
+    const { rows: bountyRows } = await db.query(
+      `SELECT * FROM mcp_bounties WHERE id = $1`,
+      [bounty_id]
+    );
+    const bounty = bountyRows[0];
+    if (!bounty) throw new Error(`バウンティID ${bounty_id} が見つかりません`);
+    if (bounty.client_wallet !== normalized) throw new Error('このバウンティのクライアントのみが confirmDelivery を呼べます');
+    if (bounty.status !== 'submitted') {
+      throw new Error(`バウンティは ${bounty.status} 状態です。confirmDelivery できるのは submitted 状態のみです`);
+    }
+    if (!bounty.job_key) throw new Error('job_key が未設定です');
+
+    await db.query(
+      `UPDATE mcp_bounties SET status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+      [bounty_id]
+    );
+
+    result.bounty_id = bounty_id;
+    result.bounty_tx_instruction = buildConfirmDeliveryInstruction(bounty.job_key);
+    result.next_step = 'bounty_tx_instruction のトランザクションを実行してください。成功後、バウンティはワーカーへ自動解放されます';
+  }
+
+  return result;
 }

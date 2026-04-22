@@ -34,6 +34,7 @@ const migrations = [
   join(__dirname, '../migrations/006_negotiation_workflow.sql'),
   join(__dirname, '../migrations/007_tool_column_alignment.sql'),
   join(__dirname, '../migrations/008_schema_fixes.sql'),
+  join(__dirname, '../migrations/009_bounty_escrow.sql'),
 ];
 
 async function run() {
