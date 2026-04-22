@@ -238,14 +238,14 @@ BountyEscrow is an **immutable, non-custodial** on-chain escrow contract for age
 
 ```
 OPEN (openBounty / depositWithAuthorization)
-  ├─ cancelBounty (client, OPEN only)       → CANCELLED (refund to client)
+  ├─ cancelBounty (client, OPEN only)       → CANCELLED (FULL refund to client, NO fee)
   ↓ submitBid (worker)
   ↓ acceptBid (client)
 ASSIGNED
   ↓ submitDeliverable (worker)
 SUBMITTED
-  ├─ confirmDelivery (client)          → RELEASED  (payment to worker)
-  └─ claimExpired (worker, after 90d)  → AUTO_RELEASED (payment to worker)
+  ├─ confirmDelivery (client)          → RELEASED       (99.9% to worker, 0.1% to DAO)
+  └─ claimExpired (worker, after 90d)  → AUTO_RELEASED  (99.9% to worker, 0.1% to DAO)
 ```
 
 ```mermaid
@@ -262,8 +262,27 @@ stateDiagram-v2
 
 - **呼び出し可能者**: バウンティ投稿者（poster）のみ
 - **呼び出し可能状態**: OPEN 状態限定（ASSIGNED 以降は応札者が存在するため不可）
-- **動作**: 投稿者への自己返金のみ（他者の資産に触れない、dispute 仲裁ではない）
+- **動作**: 投稿者への自己返金のみ（fee ゼロ・全額返金、他者の資産に触れない、dispute 仲裁ではない）
 - **用途**: 誰も応札しない場合のデッドロック解消・資金救済
+
+### Fee 分配
+
+| トリガー | Worker 受取 | DAO Treasury 受取 | 備考 |
+|---|---|---|---|
+| `confirmDelivery` | 99.9% | 0.1% | 通常納品 |
+| `claimExpired` | 99.9% | 0.1% | 90 日タイムアウト |
+| `cancelBounty` | — | **ゼロ** | 全額 client に返金 |
+
+Fee は `_distributePayout()` でコントラクト内部で自動分配される。運営の裁量介在はない。
+
+```
+Job.amount (100%)  ───────────────────  BountyEscrow._distributePayout()
+                                                │              │
+                                      99.9% → Worker     0.1% → DAO Treasury
+                                                             (Gnosis Safe 2-of-3)
+```
+
+> **Phase 0+ 注記**: `PROTOCOL_FEE_BPS = 10`（0.1%）は immutable。ランク連動 fee は Phase 1+ の検討事項（詳細: [`docs/ai-shopkeeper-bounty-economics.md`](docs/ai-shopkeeper-bounty-economics.md)、[`docs/phase1-roadmap.md`](docs/phase1-roadmap.md)）。
 
 ### MCP Tools ↔ BountyEscrow.sol
 
