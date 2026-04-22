@@ -10,7 +10,7 @@
 import dotenv from 'dotenv';
 dotenv.config({ path: '../.env.local' });
 
-import { getSupabase } from '../lib/supabase.js';
+import { db } from '../lib/db.js';
 import { buildMerkleTree } from '../lib/merkle.js';
 
 const REGISTRY_ABI = [
@@ -33,18 +33,10 @@ async function main() {
     process.exit(1);
   }
 
-  const supabase = getSupabase();
-
   // 全エージェントのスコアを取得
-  const { data: agents, error } = await supabase
-    .from('mcp_agents')
-    .select('wallet_address, trust_score')
-    .order('wallet_address');
-
-  if (error) {
-    console.error('エージェント取得失敗:', error.message);
-    process.exit(1);
-  }
+  const { rows: agents } = await db.query(
+    `SELECT wallet_address, trust_score FROM mcp_agents ORDER BY wallet_address`
+  );
 
   if (!agents || agents.length === 0) {
     console.log('エージェントが0件のためスキップ');
@@ -85,16 +77,24 @@ async function main() {
   const newEpoch = await registry.currentEpoch();
   console.log(`新しいepoch: ${newEpoch.toString()}`);
 
-  // Supabaseにスナップショット記録
-  await supabase.from('mcp_trust_snapshots').insert({
-    epoch: newEpoch.toNumber(),
-    merkle_root: root,
-    agent_count: agents.length,
-    tx_hash: tx.hash,
-    committed_at: new Date().toISOString(),
-  });
-
-  console.log('スナップショット記録完了');
+  // スナップショット記録（mcp_trust_snapshots テーブルがあれば記録）
+  // NOTE: 初期スキーマには未定義。backend-engineer にテーブル追加依頼後、
+  //       本 INSERT が実効となる。未定義時は relation エラーをキャッチして
+  //       オンチェーンコミット成功をログ出力し正常終了する。
+  try {
+    await db.query(
+      `INSERT INTO mcp_trust_snapshots (epoch, merkle_root, agent_count, tx_hash, committed_at)
+       VALUES ($1, $2, $3, $4, NOW())`,
+      [newEpoch.toNumber(), root, agents.length, tx.hash]
+    );
+    console.log('スナップショット記録完了');
+  } catch (err) {
+    if (err && err.code === '42P01') {
+      console.warn('mcp_trust_snapshots テーブル未定義のためスナップショット記録をスキップ');
+    } else {
+      throw err;
+    }
+  }
 }
 
 main().catch((err) => {
