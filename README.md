@@ -353,18 +353,10 @@ The maintainers hold no user funds or private keys directly. Maintainers partici
 
 ## Protocol Fee
 
-A 0.1% protocol fee is automatically collected on every confirmed or auto-released bounty payout and routed immutably to a DAO-governed Treasury (Gnosis Safe multisig on Polygon). Maintainers do not receive fees directly.
+- **Phase 0+**: **0%** (no protocol fees).
+- **Phase 1+ (planned)**: 0.1% routed immutably to a DAO Treasury (Gnosis Safe 2-of-3 multisig), as a new contract deployment (BountyEscrow v2.2).
 
-- Rate: `PROTOCOL_FEE_BPS = 10` (0.1%), declared as `immutable` in `BountyEscrow.sol`
-- Recipient: DAO Gnosis Safe (2-of-3 multisig)
-- Exemption: `cancelBounty` refunds the poster with **no fee deduction**
-- Changing the rate or recipient requires deploying a new contract version
-
-Fee use cases governed by the DAO:
-- Infrastructure costs
-- Contributor grants
-- Security audits
-- Ecosystem development
+Maintainers do not receive fees directly in any phase.
 
 ---
 
@@ -383,13 +375,8 @@ Phase 1+ Roadmap: transition to token-based governance (DAO voting) once network
 
 ## Funding Model
 
-JPYC Commerce MCP is funded by:
-- **DAO Treasury**: 0.1% protocol fee on confirmed/auto-released bounties, governed by DAO multisig signers
-- Grant applications: Polygon Village, JPYC, Gitcoin, Ethereum Foundation
-- GitHub Sponsors (coming soon)
-- Enterprise support contracts (inquiries: [TBD])
-
-The DAO Treasury is the primary recurring funding source; fees are used for infrastructure, contributor grants, security audits, and ecosystem development. Maintainers do not receive fees directly.
+- **Phase 0+**: Self-hosted (users run their own infra). Project sustained by donations and grants.
+- **Phase 1+**: Protocol fees to DAO Treasury + grants + sponsors + enterprise support.
 
 ---
 
