@@ -22,6 +22,9 @@ npm-debug.log*
 contracts/artifacts/
 contracts/cache/
 contracts/deployments/*.json
+contracts/typechain-types/
+contracts/coverage.json
+contracts/.env
 
 # Coverage
 coverage/
