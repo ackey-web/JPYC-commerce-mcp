@@ -20,6 +20,7 @@ import openBounty from './tools/openBounty.js';
 import acceptBid from './tools/acceptBid.js';
 import submitDeliverable from './tools/submitDeliverable.js';
 import claimExpired from './tools/claimExpired.js';
+import cancelBounty from './tools/cancelBounty.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
@@ -327,6 +328,20 @@ server.tool(
   },
   async (args) => {
     const result = await claimExpired(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 19: cancel_bounty
+server.tool(
+  'cancel_bounty',
+  'クライアントが OPEN 状態のバウンティをキャンセルし BountyEscrow.cancelBounty の calldata を返す',
+  {
+    bounty_id: z.string().describe('対象バウンティID'),
+    client_wallet: z.string().describe('クライアントのウォレットアドレス（本人確認）'),
+  },
+  async (args) => {
+    const result = await cancelBounty(args);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );

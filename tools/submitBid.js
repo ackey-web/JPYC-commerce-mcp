@@ -2,6 +2,11 @@
  * Tool 8 (v2): submit_bid
  * 受注側エージェントがタスクに対して入札する。
  * bounty_id が指定された場合は BountyEscrow.submitBid の calldata も返す（ノンカストディアル）。
+ *
+ * bidAmount について:
+ *   submitBid(jobKey, bidAmount, proposalHash) の bidAmount は参考値として記録されるが、
+ *   実際の支払い額は Job.amount（openBounty 時に確定）で固定される。
+ *   team-lead 方針: bidAmount 廃止案は不採用、現行シグネチャ維持。
  */
 import { db } from '../lib/db.js';
 import { buildSubmitBidInstruction } from '../lib/bountyCalldataBuilder.js';

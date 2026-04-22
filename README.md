@@ -236,28 +236,34 @@ BountyEscrow is an **immutable, non-custodial** on-chain escrow contract for age
 
 ### State Machine
 
+```
+OPEN (openBounty / depositWithAuthorization)
+  ├─ cancelBounty (client, OPEN only)       → CANCELLED (refund to client)
+  ↓ submitBid (worker)
+  ↓ acceptBid (client)
+ASSIGNED
+  ↓ submitDeliverable (worker)
+SUBMITTED
+  ├─ confirmDelivery (client)          → RELEASED  (payment to worker)
+  └─ claimExpired (worker, after 90d)  → AUTO_RELEASED (payment to worker)
+```
+
 ```mermaid
 stateDiagram-v2
     [*] --> OPEN : openBounty() + depositWithAuthorization()
-    OPEN --> ASSIGNED : acceptBid()
-    OPEN --> CANCELLED : cancelBounty() [poster only, v2.1]
+    OPEN --> CANCELLED : cancelBounty() [poster only]
+    OPEN --> ASSIGNED : submitBid() → acceptBid()
     ASSIGNED --> SUBMITTED : submitDeliverable()
     SUBMITTED --> RELEASED : confirmDelivery()
     SUBMITTED --> AUTO_RELEASED : claimExpired() [after 90 days]
 ```
 
-```
-OPEN ──────────── acceptBid() ──────────── ASSIGNED
-  │                                            │
-  └── cancelBounty() ──► CANCELLED   submitDeliverable()
-                                               │
-                                           SUBMITTED
-                                           /        \
-                             confirmDelivery()    claimExpired()
-                                (client)          (after 90 days)
-                                   │                    │
-                               RELEASED          AUTO_RELEASED
-```
+#### cancelBounty について
+
+- **呼び出し可能者**: バウンティ投稿者（poster）のみ
+- **呼び出し可能状態**: OPEN 状態限定（ASSIGNED 以降は応札者が存在するため不可）
+- **動作**: 投稿者への自己返金のみ（他者の資産に触れない、dispute 仲裁ではない）
+- **用途**: 誰も応札しない場合のデッドロック解消・資金救済
 
 ### MCP Tools ↔ BountyEscrow.sol
 
@@ -353,6 +359,12 @@ Current funding sources (planned / in progress):
 - Grant applications: Polygon Village, JPYC, Gitcoin, Ethereum Foundation
 - GitHub Sponsors (coming soon)
 - Enterprise support contracts (inquiries: [TBD])
+
+---
+
+## Pause Note
+
+While the contract is paused, new bounties, acceptances, submissions, and delivery confirmations are halted. The 48-hour timelock on pause activation provides users time to complete pending operations. `claimExpired` remains callable during pause to protect worker claims.
 
 ---
 

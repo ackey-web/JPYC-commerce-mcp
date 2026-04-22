@@ -19,6 +19,7 @@ import {
   buildConfirmDeliveryInstruction,
   buildSubmitDeliverableInstruction,
   buildClaimExpiredInstruction,
+  buildCancelBountyInstruction,
 } from '../lib/bountyCalldataBuilder.js';
 
 // function selectors（bountyCalldataBuilder.js の SEL 定数と一致）
@@ -328,6 +329,45 @@ test('claimExpired: non-client wallet throws', () => {
     if (bountyClient !== caller) throw new Error('このバウンティのクライアントのみが claimExpired を呼べます');
   }
   assert.throws(() => checkClient('0xaaa', '0xbbb'), /クライアントのみ/);
+  assert.doesNotThrow(() => checkClient('0xaaa', '0xaaa'));
+});
+
+// ─── cancelBounty テスト ─────────────────────────────────────────────────────
+
+const SEL_CANCEL_BOUNTY = '3b0b43a6'; // cancelBounty(bytes32)
+
+test('cancelBounty: selector is 0x3b0b43a6', () => {
+  const inst = buildCancelBountyInstruction(JOB_KEY);
+  assert.ok(inst.data.slice(2).startsWith(SEL_CANCEL_BOUNTY), );
+});
+
+test('cancelBounty: data length = 0x + 8 + 64 = 74 chars', () => {
+  const inst = buildCancelBountyInstruction(JOB_KEY);
+  assert.strictEqual(inst.data.length, 2 + 8 + 64);
+});
+
+test('cancelBounty: jobKey encoded in slot 0', () => {
+  const inst = buildCancelBountyInstruction(JOB_KEY);
+  const slot0 = inst.data.slice(10, 10 + 64);
+  assert.strictEqual(slot0, JOB_KEY.replace(/^0x/, '').padEnd(64, '0'));
+});
+
+// ─── tool ガード: cancelBounty ──────────────────────────────────────────────
+
+test('cancelBounty: non-open status throws', () => {
+  function checkStatus(status) {
+    if (status !== 'open') throw new Error(`バウンティは ${status} 状態です`);
+  }
+  assert.throws(() => checkStatus('assigned'), /assigned 状態/);
+  assert.throws(() => checkStatus('submitted'), /submitted 状態/);
+  assert.doesNotThrow(() => checkStatus('open'));
+});
+
+test('cancelBounty: non-client wallet throws', () => {
+  function checkClient(bountyClient, caller) {
+    if (bountyClient !== caller) throw new Error('このバウンティのクライアント（poster）のみが cancelBounty を呼べます');
+  }
+  assert.throws(() => checkClient('0xaaa', '0xbbb'), /poster/);
   assert.doesNotThrow(() => checkClient('0xaaa', '0xaaa'));
 });
 

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS mcp_bounties (
   job_key         TEXT UNIQUE,                    -- bytes32 hex (オンチェーン jobKey)
   onchain_job_id  BIGINT,                         -- コントラクト側の uint256 jobId
   status          TEXT NOT NULL DEFAULT 'pending_open',
-  -- pending_open → open → assigned → submitted → confirmed → released / cancelled / disputed
+  -- pending_open → open → assigned → submitted → confirmed → released / auto_released / cancelled / expired
   expires_at      TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
