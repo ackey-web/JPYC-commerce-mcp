@@ -101,11 +101,11 @@ README.md 内 10 箇所以上で非カストディアル原則に言及:
 
 ### 7. 外部公開 NG ワードスキャン — PASS
 
-禁止語: 「義照環」「特許取得済」（「特許出願済」「patent-pending」は OK）
+禁止語: `<禁止ワード1>`、`<禁止ワード2>`（「特許出願済」「patent-pending」は OK。実語句は非公開マスタ参照）
 
 **git log**:
-- `git log --all -p | grep -E "(義照環|特許取得済)"` → 1 件ヒット
-- 内容: `DEVELOPMENT_PLAN.md` の「**NGワード**: 「義照環」「特許取得済」は絶対禁止」という**禁止事項を明示するための記述**のみ。実使用ゼロ。
+- `git log --all -p | grep -E "(<禁止ワード1>|<禁止ワード2>)"` → 1 件ヒット（実語句は非公開マスタ参照）
+- 内容: `DEVELOPMENT_PLAN.md` の「**NGワード**: `<禁止ワード1>`、`<禁止ワード2>` は絶対禁止」という**禁止事項を明示するための記述**のみ。実使用ゼロ。
 
 **working tree**:
 - `DEVELOPMENT_PLAN.md`, `docs/marketing-release-checklist.md`, `docs/marketing-drafts.md`, `docs/archive/CLAUDE_md_20260421.md` に出現

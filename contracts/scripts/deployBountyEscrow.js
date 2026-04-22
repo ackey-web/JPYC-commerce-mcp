@@ -44,17 +44,34 @@ async function main() {
   const adminAddress = process.env.BOUNTY_ADMIN_ADDRESS || deployer.address;
   console.log(`Admin: ${adminAddress}`);
 
+  // Fee recipient (DAO Treasury Gnosis Safe 2-of-3) — required
+  const feeRecipientAddress =
+    chainId === 80002
+      ? process.env.BOUNTY_FEE_RECIPIENT_AMOY || ""
+      : process.env.BOUNTY_FEE_RECIPIENT_POLYGON || "";
+
+  if (!feeRecipientAddress) {
+    throw new Error(
+      "BOUNTY_FEE_RECIPIENT_AMOY (or _POLYGON) env var is required.\n" +
+        "  Set to Gnosis Safe 2-of-3 multisig address (DAO Treasury)."
+    );
+  }
+  console.log(`FeeRecipient: ${feeRecipientAddress}`);
+
   if (!ethers.isAddress(jpycAddress)) {
     throw new Error(`Invalid JPYC_ADDRESS: ${jpycAddress}`);
   }
   if (!ethers.isAddress(adminAddress)) {
     throw new Error(`Invalid BOUNTY_ADMIN_ADDRESS: ${adminAddress}`);
   }
+  if (!ethers.isAddress(feeRecipientAddress)) {
+    throw new Error(`Invalid BOUNTY_FEE_RECIPIENT: ${feeRecipientAddress}`);
+  }
 
   // Deploy
   console.log("\nDeploying BountyEscrow...");
   const BountyEscrow = await ethers.getContractFactory("BountyEscrow");
-  const escrow = await BountyEscrow.deploy(jpycAddress, adminAddress);
+  const escrow = await BountyEscrow.deploy(adminAddress, jpycAddress, feeRecipientAddress);
   await escrow.waitForDeployment();
 
   const address = await escrow.getAddress();
@@ -65,6 +82,7 @@ async function main() {
   // Post-deploy verification
   const deployedJpyc = await escrow.jpyc();
   const deployedAdmin = await escrow.admin();
+  const deployedFeeRecipient = await escrow.FEE_RECIPIENT();
   const protocolFee = await escrow.PROTOCOL_FEE_BPS();
   const claimTimeout = await escrow.CLAIM_TIMEOUT();
   const pauseTimelock = await escrow.PAUSE_TIMELOCK();
@@ -72,7 +90,8 @@ async function main() {
   console.log("\n--- Post-deploy state ---");
   console.log(`jpyc:              ${deployedJpyc}`);
   console.log(`admin:             ${deployedAdmin}`);
-  console.log(`PROTOCOL_FEE_BPS:  ${protocolFee}`);
+  console.log(`FEE_RECIPIENT:     ${deployedFeeRecipient}`);
+  console.log(`PROTOCOL_FEE_BPS:  ${protocolFee} (${Number(protocolFee) / 100}%)`);
   console.log(`CLAIM_TIMEOUT:     ${claimTimeout} seconds (${Number(claimTimeout) / 86400} days)`);
   console.log(`PAUSE_TIMELOCK:    ${pauseTimelock} seconds (${Number(pauseTimelock) / 3600} hours)`);
 
@@ -82,8 +101,11 @@ async function main() {
   if (deployedAdmin.toLowerCase() !== adminAddress.toLowerCase()) {
     throw new Error("admin address mismatch after deploy");
   }
-  if (protocolFee !== 0n) {
-    throw new Error(`PROTOCOL_FEE_BPS should be 0, got ${protocolFee}`);
+  if (deployedFeeRecipient.toLowerCase() !== feeRecipientAddress.toLowerCase()) {
+    throw new Error("FEE_RECIPIENT mismatch after deploy");
+  }
+  if (protocolFee !== 10n) {
+    throw new Error(`PROTOCOL_FEE_BPS should be 10, got ${protocolFee}`);
   }
 
   // Save deployment record
@@ -100,8 +122,9 @@ async function main() {
     txHash: deployTx.hash,
     deployer: deployer.address,
     constructorArgs: {
-      jpyc: jpycAddress,
       admin: adminAddress,
+      jpyc: jpycAddress,
+      feeRecipient: feeRecipientAddress,
     },
     constants: {
       PROTOCOL_FEE_BPS: Number(protocolFee),
@@ -124,7 +147,7 @@ async function main() {
   if (explorer) {
     console.log(`\nExplorer: ${explorer}/address/${address}`);
     console.log(
-      `Verify: npx hardhat verify --network ${network.name} ${address} ${jpycAddress} ${adminAddress}`
+      `Verify: npx hardhat verify --network ${network.name} ${address} ${adminAddress} ${jpycAddress} ${feeRecipientAddress}`
     );
   }
 
