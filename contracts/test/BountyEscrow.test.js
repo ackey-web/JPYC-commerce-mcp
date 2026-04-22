@@ -162,8 +162,31 @@ describe('BountyEscrow', function () {
 
   // ── 3. depositWithAuthorization (EIP-3009) ─────────────────────────────────
 
+  // EIP-712 署名ヘルパー（MockJPYC v2 ドメイン）
+  async function signTransferWithAuth(jpyc, signer, to, amount, validAfter, validBefore, nonce) {
+    const domain = {
+      name: 'JPY Coin',
+      version: '1',
+      chainId: (await ethers.provider.getNetwork()).chainId,
+      verifyingContract: await jpyc.getAddress(),
+    };
+    const types = {
+      TransferWithAuthorization: [
+        { name: 'from',        type: 'address' },
+        { name: 'to',          type: 'address' },
+        { name: 'value',       type: 'uint256' },
+        { name: 'validAfter',  type: 'uint256' },
+        { name: 'validBefore', type: 'uint256' },
+        { name: 'nonce',       type: 'bytes32' },
+      ],
+    };
+    const message = { from: signer.address, to, value: amount, validAfter, validBefore, nonce };
+    const sig = await signer.signTypedData(domain, types, message);
+    return ethers.Signature.from(sig);
+  }
+
   describe('depositWithAuthorization (EIP-3009)', function () {
-    it('EIP-3009 署名なしスタブで JPYC をデポジットし Job を作成する', async function () {
+    it('EIP-3009 署名付きで JPYC をデポジットし Job を作成する', async function () {
       const { escrow, jpyc, client } = await deployFixture();
       const escrowAddr = await escrow.getAddress();
       const nonce = ethers.keccak256(ethers.toUtf8Bytes('nonce-1'));
@@ -171,11 +194,15 @@ describe('BountyEscrow', function () {
       const validAfter  = now - 1n;
       const validBefore = now + 3600n;
 
+      const { v, r, s } = await signTransferWithAuth(
+        jpyc, client, escrowAddr, AMOUNT, validAfter, validBefore, nonce
+      );
+
       await expect(
         escrow.connect(client).depositWithAuthorization(
           JOB_KEY, AMOUNT,
           validAfter, validBefore, nonce,
-          0, ethers.ZeroHash, ethers.ZeroHash
+          v, r, s
         )
       ).to.emit(escrow, 'BountyOpened').withArgs(1n, JOB_KEY, client.address, AMOUNT);
 
@@ -183,34 +210,45 @@ describe('BountyEscrow', function () {
     });
 
     it('期限切れ署名（validBefore 過去）は AuthExpired で revert', async function () {
-      const { escrow, client } = await deployFixture();
+      const { escrow, jpyc, client } = await deployFixture();
+      const escrowAddr = await escrow.getAddress();
       const nonce = ethers.keccak256(ethers.toUtf8Bytes('nonce-expired'));
       const now = BigInt(await time.latest());
+      const validAfter  = 0n;
+      const validBefore = now - 1n; // 過去
+
+      const { v, r, s } = await signTransferWithAuth(
+        jpyc, client, escrowAddr, AMOUNT, validAfter, validBefore, nonce
+      );
 
       await expect(
         escrow.connect(client).depositWithAuthorization(
           JOB_KEY, AMOUNT,
-          0n, now - 1n, nonce,  // validBefore = 過去
-          0, ethers.ZeroHash, ethers.ZeroHash
+          validAfter, validBefore, nonce,
+          v, r, s
         )
       ).to.be.revertedWith('AuthExpired');
     });
 
     it('同一 nonce の再利用は AuthAlreadyUsed で revert', async function () {
       const { escrow, jpyc, client } = await deployFixture();
-      // 追加 mint と approve
       await jpyc.mint(client.address, AMOUNT);
+      const escrowAddr = await escrow.getAddress();
       const nonce = ethers.keccak256(ethers.toUtf8Bytes('nonce-dup'));
       const now = BigInt(await time.latest());
       const va = now - 1n, vb = now + 3600n;
 
+      const { v, r, s } = await signTransferWithAuth(
+        jpyc, client, escrowAddr, AMOUNT, va, vb, nonce
+      );
+
       await escrow.connect(client).depositWithAuthorization(
-        JOB_KEY, AMOUNT, va, vb, nonce, 0, ethers.ZeroHash, ethers.ZeroHash
+        JOB_KEY, AMOUNT, va, vb, nonce, v, r, s
       );
       // 2回目（別 jobKey でも nonce が使用済み）
       await expect(
         escrow.connect(client).depositWithAuthorization(
-          JOB_KEY_2, AMOUNT, va, vb, nonce, 0, ethers.ZeroHash, ethers.ZeroHash
+          JOB_KEY_2, AMOUNT, va, vb, nonce, v, r, s
         )
       ).to.be.revertedWith('AuthAlreadyUsed');
     });
