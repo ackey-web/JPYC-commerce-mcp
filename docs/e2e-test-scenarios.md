@@ -252,6 +252,155 @@ node scripts/commitMerkleRoot.js
 
 ---
 
+---
+
+## シナリオ B: BountyEscrow フロー（P0-18 拡張）
+
+EIP-3009 ガスレス入金 + BountyEscrow オンチェーンエスクロー経由のフル取引。
+
+### 前提条件（シナリオ B 固有）
+
+| 項目 | 値 |
+|---|---|
+| BountyEscrow コントラクト | `.env` の `BOUNTY_ESCROW_ADDRESS`（Amoy デプロイ済み） |
+| job_key | `keccak256(agentA.wallet + timestamp)` 形式の bytes32 |
+| JPYC 残高 | エージェント A のウォレットに 600 JPYC 以上（Amoy テスト用 JPYC） |
+
+---
+
+### B-1: バウンティ開設（openBounty + EIP-3009 入金）
+
+```bash
+mcp call open_bounty '{
+  "poster_wallet": "0xAAAA...0001",
+  "task_title": "Solidity コントラクトのセキュリティ監査",
+  "amount_jpyc": 500,
+  "deadline_days": 7
+}'
+```
+
+**検証項目:**
+- [ ] `job_key` (bytes32) が返る
+- [ ] `open_calldata` に `openBounty` セレクタ `0xdf6814f6` が含まれる
+- [ ] `deposit_typed_data` に EIP-712 `TransferWithAuthorization` typed data が含まれる
+- [ ] `domain.name: "JPY Coin"`, `domain.chainId: 80002` が正しい
+- [ ] A がオフチェーン署名 → `depositWithAuthorization` ブロードキャスト → Amoy でトランザクション成功
+- [ ] BountyEscrow コントラクト上で `jobs[jobKey].status == OPEN(1)` を確認
+
+---
+
+### B-2: 入札（submitBid）
+
+```bash
+mcp call submit_bid '{
+  "job_key": "<B-1で取得したjob_key>",
+  "bidder_wallet": "0xBBBB...0002",
+  "bid_amount_jpyc": 480
+}'
+```
+
+**検証項目:**
+- [ ] `calldata` に `submitBid` セレクタ `0xce677693` が含まれる
+- [ ] B がブロードキャスト → Amoy でトランザクション成功
+- [ ] `jobs[jobKey].bidCount == 1` を確認
+- [ ] `bids[jobKey][0].worker == 0xBBBB...0002` を確認
+
+---
+
+### B-3: 入札承認（acceptBid）
+
+```bash
+mcp call accept_bid '{
+  "job_key": "<job_key>",
+  "acceptor_wallet": "0xAAAA...0001",
+  "bid_index": 0
+}'
+```
+
+**検証項目:**
+- [ ] `calldata` に `acceptBid` セレクタ `0x09dfd4b7` が含まれる
+- [ ] A がブロードキャスト → Amoy でトランザクション成功
+- [ ] `jobs[jobKey].status == ASSIGNED(2)` を確認
+- [ ] `jobs[jobKey].worker == 0xBBBB...0002` を確認
+
+---
+
+### B-4: 成果物提出（submitDeliverable）
+
+```bash
+mcp call submit_deliverable '{
+  "job_key": "<job_key>",
+  "worker_wallet": "0xBBBB...0002",
+  "deliverable_hash": "0xdeadbeef..."
+}'
+```
+
+**検証項目:**
+- [ ] `calldata` に `submitDeliverable` セレクタ `0xd46600aa` が含まれる
+- [ ] B がブロードキャスト → Amoy でトランザクション成功
+- [ ] `jobs[jobKey].status == SUBMITTED(3)` を確認
+- [ ] `jobs[jobKey].deliverableHash == 0xdeadbeef...` を確認
+
+---
+
+### B-5: 納品確認・エスクロー解放（confirmDelivery）
+
+```bash
+mcp call confirm_delivery_bounty '{
+  "job_key": "<job_key>",
+  "buyer_wallet": "0xAAAA...0001"
+}'
+```
+
+**検証項目:**
+- [ ] `calldata` に `confirmDelivery` セレクタ `0x74950ffd` が含まれる
+- [ ] A がブロードキャスト → Amoy でトランザクション成功
+- [ ] `jobs[jobKey].status == RELEASED(4)` を確認
+- [ ] B の JPYC 残高が入札額（480 JPYC）増加していることを確認
+- [ ] `BountyReleased` イベントが emit されていることを確認
+
+---
+
+### B-6: SBT 更新（BountyEscrow 完了後）
+
+```bash
+mcp call update_agent_record '{
+  "agent_id": "<B の agent_id>",
+  "task_id": "<job_key をタスクIDとして記録>",
+  "task_result": "completed",
+  "sentiment": 0.85
+}'
+```
+
+**検証項目:**
+- [ ] B の `trust_score` が上昇する
+- [ ] `unique_counterparty_count` が更新される
+- [ ] `onchain.calldata` が有効な hex 文字列
+- [ ] calldata を Amoy でブロードキャスト → SBT の `updateScore()` 成功
+
+---
+
+### B-7: キャンセルケース（cancelBounty v2.1）
+
+OPEN 状態のバウンティをポスターがキャンセル:
+
+```bash
+mcp call cancel_bounty '{
+  "job_key": "<OPEN状態のjob_key>",
+  "poster_wallet": "0xAAAA...0001"
+}'
+```
+
+**検証項目:**
+- [ ] `calldata` に `cancelBounty` セレクタが含まれる
+- [ ] A がブロードキャスト → Amoy でトランザクション成功
+- [ ] `jobs[jobKey].status == CANCELLED(5)` を確認
+- [ ] A の JPYC 残高が元の金額分返還されていることを確認（エスクロー返金）
+- [ ] `BountyCancelled` イベントが emit されていることを確認
+- [ ] ASSIGNED/SUBMITTED 状態での `cancelBounty` 呼び出しは `revert` されることを確認
+
+---
+
 ## 実行チェックリスト（P0-18 完了判定）
 
 - [ ] シナリオ 1 ハッピーパス: 全ステップ通過
@@ -259,6 +408,8 @@ node scripts/commitMerkleRoot.js
 - [ ] シナリオ 2-B 失敗: failure_rate 反映を確認
 - [ ] シナリオ 2-C Sybil: Diversity Factor 抑制を確認
 - [ ] シナリオ 3 Merkle Root: Amoy コミット成功
+- [ ] シナリオ B-1〜B-6 BountyEscrow ハッピーパス: OPEN → RELEASED を Amoy で確認
+- [ ] シナリオ B-7 cancelBounty: OPEN→CANCELLED / ASSIGNED での revert を確認
 - [ ] SBT mint の Amoy 疎通（smart-contract-engineer デプロイアドレス必須）
 - [ ] JPYC 送金 calldata の Amoy ブロードキャスト成功
 
