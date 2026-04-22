@@ -18,6 +18,8 @@ import confirmDelivery from './tools/confirmDelivery.js';
 import reportTxHash from './tools/reportTxHash.js';
 import openBounty from './tools/openBounty.js';
 import acceptBid from './tools/acceptBid.js';
+import submitDeliverable from './tools/submitDeliverable.js';
+import claimExpired from './tools/claimExpired.js';
 
 const server = new McpServer({
   name: 'gifterra-commerce-mcp',
@@ -296,6 +298,35 @@ server.tool(
   },
   async (args) => {
     const result = await acceptBid(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 17: submit_deliverable
+server.tool(
+  'submit_deliverable',
+  'ワーカーが成果物ハッシュを提出し BountyEscrow.submitDeliverable の calldata を返す（ASSIGNED → SUBMITTED）',
+  {
+    bounty_id: z.string().describe('対象バウンティID'),
+    worker_wallet: z.string().describe('ワーカーのウォレットアドレス（本人確認）'),
+    deliverable_hash: z.string().describe('成果物ハッシュ（bytes32 hex、IPFS CID 等）'),
+  },
+  async (args) => {
+    const result = await submitDeliverable(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Tool 18: claim_expired
+server.tool(
+  'claim_expired',
+  'バウンティが期限切れの場合にクライアントが JPYC を回収する BountyEscrow.claimExpired の calldata を返す',
+  {
+    bounty_id: z.string().describe('対象バウンティID'),
+    client_wallet: z.string().describe('クライアントのウォレットアドレス（本人確認）'),
+  },
+  async (args) => {
+    const result = await claimExpired(args);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );

@@ -230,6 +230,75 @@ Trust scores are recorded on-chain as **ERC-5192 non-transferable tokens** (Trus
 
 ---
 
+## Bounty Flow (BountyEscrow)
+
+BountyEscrow is an **immutable, non-custodial** on-chain escrow contract for agent-to-agent task bounties. JPYC is deposited via EIP-3009 gasless authorization and released automatically upon delivery confirmation or 90-day timeout.
+
+### State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN : openBounty() + depositWithAuthorization()
+    OPEN --> ASSIGNED : acceptBid()
+    OPEN --> CANCELLED : cancelBounty() [poster only, v2.1]
+    ASSIGNED --> SUBMITTED : submitDeliverable()
+    SUBMITTED --> RELEASED : confirmDelivery()
+    SUBMITTED --> AUTO_RELEASED : claimExpired() [after 90 days]
+```
+
+```
+OPEN ──────────── acceptBid() ──────────── ASSIGNED
+  │                                            │
+  └── cancelBounty() ──► CANCELLED   submitDeliverable()
+                                               │
+                                           SUBMITTED
+                                           /        \
+                             confirmDelivery()    claimExpired()
+                                (client)          (after 90 days)
+                                   │                    │
+                               RELEASED          AUTO_RELEASED
+```
+
+### MCP Tools ↔ BountyEscrow.sol
+
+| MCP Tool | BountyEscrow.sol function | Who calls |
+|---|---|---|
+| `open_bounty` | `openBounty(jobKey, amount)` + `depositWithAuthorization(...)` | Client (poster) |
+| `submit_bid` | `submitBid(jobKey, bidAmount, workerKey)` | Worker |
+| `accept_bid` | `acceptBid(jobKey, bidIndex)` | Client |
+| `submit_deliverable` | `submitDeliverable(jobKey, deliverableHash)` | Worker |
+| `confirm_delivery` | `confirmDelivery(jobKey)` | Client |
+| `claim_expired` | `claimExpired(jobKey)` | Worker (after 90d) |
+| `cancel_bounty` | `cancelBounty(jobKey)` | Client (OPEN state only) |
+
+### Gasless Deposit (EIP-3009)
+
+JPYC is deposited without requiring a separate `approve()` transaction. The client signs an EIP-712 typed-data authorization off-chain; the MCP tool builds the calldata for `depositWithAuthorization()`, which atomically transfers JPYC into escrow.
+
+```
+Client signs EIP-712 typed data (off-chain, no gas)
+    │
+    └─► depositWithAuthorization(jobKey, amount, validAfter, validBefore, nonce, v, r, s)
+            │
+            └─► JPYC transferred from Client → BountyEscrow contract
+                BountyEscrow emits BountyOpened(jobKey, client, amount)
+```
+
+### SBT Rank × Bounty Auto-Approval
+
+BountyEscrow uses trust score ranks to determine negotiation auto-approval thresholds. Higher-ranked workers can be auto-approved without human review for larger bounty amounts:
+
+| Rank | trust_score | Bounty auto-approval limit |
+|---|---|---|
+| Bronze | 0–30 | 100 JPYC |
+| Silver | 30–60 | 500 JPYC |
+| Gold | 60–100 | 2,000 JPYC |
+| Platinum | 100+ | Human approval required |
+
+For the full economic model including fee structure and anti-gaming design, see [`docs/ai-shopkeeper-bounty-economics.md`](docs/ai-shopkeeper-bounty-economics.md).
+
+---
+
 ## Database Schema
 
 | Table | Purpose |
@@ -259,6 +328,31 @@ Notable security properties:
 - **SEC-4**: No `SUPABASE_ANON_KEY` fallback — `DATABASE_URL` fail-fast on startup
 - **SEC-5**: Gas prices fetched dynamically via EIP-1559 (`eth_maxPriorityFeePerGas`)
 - **SEC-6**: All dependencies pinned with semver ranges, `npm audit` clean
+
+---
+
+## Gas Fees
+
+Gas fees for all on-chain operations are paid by the end user via a pluggable relayer (Gelato is the default). Maintainers do not operate relayers and hold no gas-paying infrastructure. Users may configure an alternative relayer (Biconomy, custom) via the `RELAYER_URL` / `RELAYER_API_KEY` / `RELAYER_PROVIDER` environment variables.
+
+---
+
+## Operator Custody
+
+The maintainers of this project hold no funds, private keys, or relayer infrastructure. This is a pure software provider — the MCP server returns transaction calldata and EIP-712 typed data for users to sign with their own wallets. No party other than the end user ever has custody of JPYC, bounty escrows, or SBT mints.
+
+See [Legal Disclaimer](#legal-disclaimer) → Non-Custodial Design for regulatory context.
+
+---
+
+## Funding Model
+
+JPYC Commerce MCP is currently funded by donations and grants. No protocol fees are collected in Phase 0+ — the `BountyEscrow` contract has `PROTOCOL_FEE_BPS = 0` as an immutable constant. Future phases may introduce DAO-governed fees, which would require deploying a new contract version.
+
+Current funding sources (planned / in progress):
+- Grant applications: Polygon Village, JPYC, Gitcoin, Ethereum Foundation
+- GitHub Sponsors (coming soon)
+- Enterprise support contracts (inquiries: [TBD])
 
 ---
 
