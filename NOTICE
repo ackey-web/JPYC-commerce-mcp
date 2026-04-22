@@ -20,13 +20,14 @@ Third-party components used by this project are listed below along with
 their respective licenses. Full license texts are available from the
 upstream projects.
 
-- @modelcontextprotocol/sdk  — MIT License
-- @anthropic-ai/sdk           — MIT License
-- dotenv                      — BSD-2-Clause License
-- ethers                      — MIT License
-- keccak256                   — MIT License
-- merkletreejs                — MIT License
-- pg                          — MIT License
+- @modelcontextprotocol/sdk   — MIT License
+- @anthropic-ai/sdk            — MIT License
+- @openzeppelin/contracts      — MIT License (Solidity: ReentrancyGuard 等、BountyEscrow.sol で使用)
+- dotenv                       — BSD-2-Clause License
+- ethers                       — MIT License
+- keccak256                    — MIT License
+- merkletreejs                 — MIT License
+- pg                           — MIT License
 
 --------------------------------------------------------------------------------
 
