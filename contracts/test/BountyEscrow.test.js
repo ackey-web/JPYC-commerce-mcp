@@ -15,7 +15,7 @@ const CLAIM_TIMEOUT = 90 * 24 * 60 * 60; // 90日（秒）
 const PAUSE_TIMELOCK = 48 * 60 * 60;     // 48時間（秒）
 
 // JobStatus 列挙値（コントラクトと同じ順序）
-const JobStatus = { OPEN: 0n, ASSIGNED: 1n, SUBMITTED: 2n, RELEASED: 3n, AUTO_RELEASED: 4n };
+const JobStatus = { OPEN: 0n, ASSIGNED: 1n, SUBMITTED: 2n, RELEASED: 3n, AUTO_RELEASED: 4n, CANCELLED: 5n };
 
 // ─── フィクスチャ ─────────────────────────────────────────────────────────────
 
@@ -557,6 +557,99 @@ describe('BountyEscrow', function () {
       const job2 = await escrow.getJob(JOB_KEY_2);
       expect(job1.status).to.equal(JobStatus.ASSIGNED);
       expect(job2.status).to.equal(JobStatus.OPEN);
+    });
+  });
+
+  // ── 13. cancelBounty (v2.1) ───────────────────────────────────────────────
+
+  describe('cancelBounty', function () {
+    it('OPEN → CANCELLED に遷移し、JPYC がクライアントに返金される', async function () {
+      const { escrow, jpyc, client } = await deployFixture();
+      await openJob(escrow, client);
+
+      const clientBalBefore = await jpyc.balanceOf(client.address);
+      await expect(escrow.connect(client).cancelBounty(JOB_KEY))
+        .to.emit(escrow, 'BountyCancelled')
+        .withArgs(1n, client.address);
+
+      const job = await escrow.getJob(JOB_KEY);
+      expect(job.status).to.equal(JobStatus.CANCELLED);
+
+      const clientBalAfter = await jpyc.balanceOf(client.address);
+      expect(clientBalAfter - clientBalBefore).to.equal(AMOUNT);
+    });
+
+    it('クライアント以外が cancelBounty を呼ぶと NotClient で revert', async function () {
+      const { escrow, attacker, client } = await deployFixture();
+      await openJob(escrow, client);
+
+      await expect(escrow.connect(attacker).cancelBounty(JOB_KEY))
+        .to.be.revertedWithCustomError(escrow, 'NotClient');
+    });
+
+    it('ASSIGNED 以降の cancelBounty は InvalidStatus で revert', async function () {
+      const { escrow, client, worker } = await deployFixture();
+      await openJob(escrow, client);
+
+      const bidTx = await escrow.connect(worker).submitBid(JOB_KEY, AMOUNT, PROPOSAL_HASH);
+      const bidReceipt = await bidTx.wait();
+      const bidEvent = bidReceipt.logs.find(l => {
+        try { return escrow.interface.parseLog(l).name === 'BidSubmitted'; } catch { return false; }
+      });
+      const bidId = escrow.interface.parseLog(bidEvent).args.bidId;
+      await escrow.connect(client).acceptBid(JOB_KEY, bidId);
+
+      await expect(escrow.connect(client).cancelBounty(JOB_KEY))
+        .to.be.revertedWithCustomError(escrow, 'InvalidStatus');
+    });
+
+    it('存在しない jobKey の cancelBounty は JobNotFound で revert', async function () {
+      const { escrow, client } = await deployFixture();
+      const badKey = ethers.keccak256(ethers.toUtf8Bytes('nonexistent'));
+      await expect(escrow.connect(client).cancelBounty(badKey))
+        .to.be.revertedWithCustomError(escrow, 'JobNotFound');
+    });
+
+    it('cancelBounty 後は JPYC コントラクト残高がゼロになる', async function () {
+      const { escrow, jpyc, client } = await deployFixture();
+      await openJob(escrow, client);
+
+      const escrowAddr = await escrow.getAddress();
+      expect(await jpyc.balanceOf(escrowAddr)).to.equal(AMOUNT);
+
+      await escrow.connect(client).cancelBounty(JOB_KEY);
+      expect(await jpyc.balanceOf(escrowAddr)).to.equal(0n);
+    });
+  });
+
+  // ── 14. schedulePause 重複防止 (v2.1) ────────────────────────────────────
+
+  describe('schedulePause duplicate prevention', function () {
+    it('schedulePause を二重呼び出しすると PauseAlreadyScheduled で revert', async function () {
+      const { escrow, admin } = await deployFixture();
+      await escrow.connect(admin).schedulePause();
+
+      await expect(escrow.connect(admin).schedulePause())
+        .to.be.revertedWithCustomError(escrow, 'PauseAlreadyScheduled');
+    });
+
+    it('cancelScheduledPause 後は再 schedulePause が成功する', async function () {
+      const { escrow, admin } = await deployFixture();
+      await escrow.connect(admin).schedulePause();
+      await escrow.connect(admin).cancelScheduledPause();
+
+      // 再スケジュールは revert しない
+      await expect(escrow.connect(admin).schedulePause()).to.not.be.reverted;
+      expect(await escrow.pauseScheduled()).to.equal(true);
+    });
+
+    it('cancelScheduledPause 後の activatePause は PauseNotScheduled で revert', async function () {
+      const { escrow, admin } = await deployFixture();
+      await escrow.connect(admin).schedulePause();
+      await escrow.connect(admin).cancelScheduledPause();
+
+      await expect(escrow.connect(admin).activatePause())
+        .to.be.revertedWithCustomError(escrow, 'PauseNotScheduled');
     });
   });
 });

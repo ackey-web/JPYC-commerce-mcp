@@ -53,7 +53,8 @@ contract BountyEscrow is ReentrancyGuard {
         ASSIGNED,      // ワーカー決定済み
         SUBMITTED,     // 成果物提出済み（CLAIM_TIMEOUT タイムロック開始）
         RELEASED,      // 支払い完了（confirmDelivery 経由）
-        AUTO_RELEASED  // タイムロック経過による自動払出
+        AUTO_RELEASED, // タイムロック経過による自動払出
+        CANCELLED      // クライアントによるキャンセル（OPEN 状態限定）
     }
 
     /// @dev storage packing: client+worker は address(20B)、amount は uint128(16B) で 1 slot に収める
@@ -101,6 +102,7 @@ contract BountyEscrow is ReentrancyGuard {
     error ContractPaused();
     error ContractNotPaused();
     error PauseNotScheduled();
+    error PauseAlreadyScheduled();
     error PauseTimelockActive(uint64 availableAt);
     error JobNotFound(bytes32 jobKey);
     error JobAlreadyExists(bytes32 jobKey);
@@ -115,6 +117,7 @@ contract BountyEscrow is ReentrancyGuard {
     // ─── イベント ─────────────────────────────────────────────────────────────
 
     event BountyOpened(uint64 indexed jobId, bytes32 indexed jobKey, address indexed client, uint128 amount);
+    event BountyCancelled(uint64 indexed jobId, address indexed client);
     event BidSubmitted(uint64 indexed bidId, uint64 indexed jobId, address indexed bidder, uint128 bidAmount);
     event BidAccepted(uint64 indexed jobId, uint64 indexed bidId, address worker);
     event DeliverableSubmitted(uint64 indexed jobId, address indexed worker, bytes32 deliverableHash);
@@ -264,6 +267,33 @@ contract BountyEscrow is ReentrancyGuard {
         emit BidAccepted(jobId, bidId, j.worker);
     }
 
+    /**
+     * @notice クライアントがバウンティをキャンセルし、JPYC を返金する（OPEN → CANCELLED）
+     * @dev OPEN 状態のみキャンセル可能。ワーカーがアサイン済み（ASSIGNED 以降）の場合は不可。
+     *      ノンカストディアル原則に従い、第三者介入なく poster 自身に返金する。
+     * @param jobKey バウンティの一意キー
+     */
+    function cancelBounty(bytes32 jobKey)
+        external
+        nonReentrant
+        whenNotPaused
+    {
+        uint64 jobId = _requireJobId(jobKey);
+        Job storage j = jobs[jobId];
+
+        if (j.status != JobStatus.OPEN) revert InvalidStatus(jobId, j.status);
+        if (msg.sender != j.client)     revert NotClient(jobId);
+
+        // Effects（Interaction より前）
+        j.status = JobStatus.CANCELLED;
+        uint128 amount = j.amount;
+        address client = j.client;
+
+        // Interaction
+        _safeTransfer(client, amount);
+        emit BountyCancelled(jobId, client);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 成果物提出・確認・払出
     // ──────────────────────────────────────────────────────────────────────────
@@ -353,6 +383,7 @@ contract BountyEscrow is ReentrancyGuard {
      * @dev admin（multisig 推奨）が発動。SUBMITTED 状態のジョブは claimExpired で保護。
      */
     function schedulePause() external onlyAdmin {
+        if (pauseScheduled) revert PauseAlreadyScheduled();
         pauseScheduledAt = uint64(block.timestamp) + PAUSE_TIMELOCK;
         pauseScheduled   = true;
         emit PauseScheduled(pauseScheduledAt);
