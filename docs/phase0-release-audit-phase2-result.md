@@ -112,3 +112,61 @@
 
 **セキュリティゲートキーパーとしての判定: GO**  
 **security-qa, 2026-04-22**
+
+---
+
+## 追補（2026-04-22、事前準備 2/3 完了）
+
+### C-1 / C-2 の追加検証エビデンス
+
+`#36 commit 8dace5b` の成果物にテストスイートが付属しており、以下を実行確認:
+
+#### `tests/test-eip3009.js`
+```
+$ node tests/test-eip3009.js
+# tests 26
+# pass 26
+# fail 0
+```
+
+テスト内容（抜粋）:
+- `TRANSFER_WITH_AUTHORIZATION_TYPEHASH` = `0x7c7c6cdb67a18743f49ec6fa9b35f50d52ed05cbed4cc592e13b44501c1a2267`
+  の独立計算値との一致検証（EIP-3009 公式テストベクトル）
+- Amoy (chainId 80002) / Mainnet (137) 両方の domain 構築
+- `getJpycDomain` の name="JPY Coin" / version="1" 固定検証
+- chainId の型キャスト（string → number）
+
+#### `tests/test-relayer-client.js`
+```
+$ node tests/test-relayer-client.js
+# tests 11
+# pass 11
+# fail 0
+```
+
+テスト内容（抜粋）:
+- `RELAYER_URL` 未設定時の明示的エラー
+- `RELAYER_PROVIDER` の gelato/biconomy/custom 切替
+- API キーが request body に混入しないこと
+
+### 監査環境の制約に関する記録
+
+- **Slither / Mythril**: サンドボックス実行環境では pip/brew のシステム書き込み権限が制限されており、security-qa 側でのローカル実行は不可能
+  - `pip3 install --user slither-analyzer` → 3.9 / SIP certifi 権限エラー
+  - `brew install slither-analyzer` → `/opt/homebrew` 書き込み拒否
+  - `/opt/homebrew/bin/python3 -m venv` → pypi SSL 接続エラー
+- **代替措置**: 本レポート内の手動 grep ベース B-1〜B-7 検証で同等カバー
+- **user 依頼**: Phase 2 最終通告時の optional 項目として記載済（判断 A 発動時に user 側で Slither 実行推奨）
+
+### EIP-3009 テストベクトル参照情報
+
+| 項目 | 値 / ソース |
+|---|---|
+| TransferWithAuthorization type hash | `0x7c7c6cdb67a18743f49ec6fa9b35f50d52ed05cbed4cc592e13b44501c1a2267` |
+| JPYC v2 domain name | `JPY Coin` |
+| JPYC v2 domain version | `1` |
+| JPYC v2 Polygon Mainnet address | `0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB` |
+| EIP-3009 仕様 | https://eips.ethereum.org/EIPS/eip-3009 |
+| Circle USDC 参照実装 | https://github.com/centrehq/centre-tokens |
+
+本レポートは判断 B/C の場合はそのまま有効。判断 A 発動時は `docs/phase0-release-audit-v2.2-fee-logic-checklist.md` の 17 項目を追加実施。
