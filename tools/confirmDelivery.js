@@ -2,12 +2,9 @@
  * Tool 13 (v2): confirm_delivery — ノンカストディアル
  *
  * 買い手が受取確認 → エスクロー解放の指示を返す。
- * MCPはトランザクションを実行しない。エスクローウォレットからの
- * 送金はエスクロー管理者（マルチシグ等）が実行する。
- *
- * 双方の信頼スコアは即時更新する（オフチェーン）。
+ * MCPはトランザクションを実行しない。
  */
-import { supabase } from '../lib/supabase.js';
+import { db } from '../lib/db.js';
 import { calculateRoleScore } from '../lib/trustScore.js';
 import { buildTransferFromInstruction } from '../lib/txBuilder.js';
 
@@ -16,50 +13,27 @@ const ESCROW_ADDRESS = process.env.ESCROW_WALLET_ADDRESS || '0x00000000000000000
 export default async function handler({ order_id, buyer_wallet, seller_sentiment, buyer_sentiment }) {
   const normalized = buyer_wallet.toLowerCase();
 
-  // 注文取得
-  const { data: order, error: orderError } = await supabase
-    .from('mcp_orders')
-    .select('*')
-    .eq('id', order_id)
-    .single();
-
-  if (orderError || !order) {
-    throw new Error(`注文ID ${order_id} が見つかりません`);
-  }
-
-  if (order.buyer_wallet !== normalized) {
-    throw new Error('この注文の買い手のみが受取確認できます');
-  }
-
+  const { rows: orderRows } = await db.query(`SELECT * FROM mcp_orders WHERE id = $1`, [order_id]);
+  const order = orderRows[0];
+  if (!order) throw new Error(`注文ID ${order_id} が見つかりません`);
+  if (order.buyer_wallet !== normalized) throw new Error('この注文の買い手のみが受取確認できます');
   if (!['escrowed', 'shipped'].includes(order.status)) {
     throw new Error(`この注文は ${order.status} 状態です。受取確認できるのは escrowed/shipped の注文のみです`);
   }
 
-  // エスクロー解放の指示を生成（MCPは実行しない）
-  const releaseInstruction = buildTransferFromInstruction(
-    ESCROW_ADDRESS,
-    order.seller_wallet,
-    order.amount
+  const releaseInstruction = buildTransferFromInstruction(ESCROW_ADDRESS, order.seller_wallet, order.amount);
+
+  await db.query(
+    `UPDATE mcp_orders SET status = 'delivered', seller_sentiment = $1, buyer_sentiment = $2, updated_at = NOW() WHERE id = $3`,
+    [seller_sentiment ?? null, buyer_sentiment ?? null, order_id]
   );
 
-  // 注文を delivered に更新（スコアは即時反映、エスクロー解放はエージェント/管理者が実行）
-  await supabase
-    .from('mcp_orders')
-    .update({
-      status: 'delivered',
-      seller_sentiment: seller_sentiment ?? null,
-      buyer_sentiment: buyer_sentiment ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', order_id);
-
   // --- 売り手スコア更新 ---
-  const { data: seller } = await supabase
-    .from('mcp_agents')
-    .select('*')
-    .eq('wallet_address', order.seller_wallet)
-    .single();
-
+  const { rows: sellerRows } = await db.query(
+    `SELECT * FROM mcp_agents WHERE wallet_address = $1`,
+    [order.seller_wallet]
+  );
+  const seller = sellerRows[0];
   if (seller) {
     const newSellerCompletion = (seller.seller_completion_count || 0) + 1;
     const updates = { seller_completion_count: newSellerCompletion };
@@ -68,13 +42,12 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
       const newCount = (seller.seller_sentiment_count || 0) + 1;
       updates.seller_sentiment_count = newCount;
       if (newCount <= 10) {
-        const { data: orders } = await supabase
-          .from('mcp_orders')
-          .select('seller_sentiment')
-          .eq('seller_wallet', order.seller_wallet)
-          .not('seller_sentiment', 'is', null);
-        if (orders && orders.length > 0) {
-          updates.seller_avg_sentiment = orders.reduce((s, o) => s + o.seller_sentiment, 0) / orders.length;
+        const { rows: sentRows } = await db.query(
+          `SELECT seller_sentiment FROM mcp_orders WHERE seller_wallet = $1 AND seller_sentiment IS NOT NULL`,
+          [order.seller_wallet]
+        );
+        if (sentRows.length > 0) {
+          updates.seller_avg_sentiment = sentRows.reduce((s, o) => s + o.seller_sentiment, 0) / sentRows.length;
         }
       } else {
         updates.seller_avg_sentiment = 0.8 * (seller.seller_avg_sentiment || 0.5) + 0.2 * seller_sentiment;
@@ -82,20 +55,19 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
     }
 
     updates.seller_score = calculateRoleScore({ ...seller, ...updates }, 'seller');
-
-    await supabase
-      .from('mcp_agents')
-      .update(updates)
-      .eq('wallet_address', order.seller_wallet);
+    const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`).join(', ');
+    await db.query(
+      `UPDATE mcp_agents SET ${setClauses} WHERE wallet_address = $1`,
+      [order.seller_wallet, ...Object.values(updates)]
+    );
   }
 
   // --- 買い手スコア更新 ---
-  const { data: buyer } = await supabase
-    .from('mcp_agents')
-    .select('*')
-    .eq('wallet_address', normalized)
-    .single();
-
+  const { rows: buyerRows } = await db.query(
+    `SELECT * FROM mcp_agents WHERE wallet_address = $1`,
+    [normalized]
+  );
+  const buyer = buyerRows[0];
   if (buyer) {
     const newBuyerCompletion = (buyer.buyer_completion_count || 0) + 1;
     const updates = { buyer_completion_count: newBuyerCompletion };
@@ -104,13 +76,12 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
       const newCount = (buyer.buyer_sentiment_count || 0) + 1;
       updates.buyer_sentiment_count = newCount;
       if (newCount <= 10) {
-        const { data: orders } = await supabase
-          .from('mcp_orders')
-          .select('buyer_sentiment')
-          .eq('buyer_wallet', normalized)
-          .not('buyer_sentiment', 'is', null);
-        if (orders && orders.length > 0) {
-          updates.buyer_avg_sentiment = orders.reduce((s, o) => s + o.buyer_sentiment, 0) / orders.length;
+        const { rows: sentRows } = await db.query(
+          `SELECT buyer_sentiment FROM mcp_orders WHERE buyer_wallet = $1 AND buyer_sentiment IS NOT NULL`,
+          [normalized]
+        );
+        if (sentRows.length > 0) {
+          updates.buyer_avg_sentiment = sentRows.reduce((s, o) => s + o.buyer_sentiment, 0) / sentRows.length;
         }
       } else {
         updates.buyer_avg_sentiment = 0.8 * (buyer.buyer_avg_sentiment || 0.5) + 0.2 * buyer_sentiment;
@@ -118,11 +89,11 @@ export default async function handler({ order_id, buyer_wallet, seller_sentiment
     }
 
     updates.buyer_score = calculateRoleScore({ ...buyer, ...updates }, 'buyer');
-
-    await supabase
-      .from('mcp_agents')
-      .update(updates)
-      .eq('wallet_address', normalized);
+    const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`).join(', ');
+    await db.query(
+      `UPDATE mcp_agents SET ${setClauses} WHERE wallet_address = $1`,
+      [normalized, ...Object.values(updates)]
+    );
   }
 
   return {
