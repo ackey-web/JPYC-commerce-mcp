@@ -1,93 +1,60 @@
 /**
  * Tool 7: verify_trust_score
  * エージェントの信頼スコアをオンチェーンMerkle Rootで検証する
- *
- * フロー:
- * 1. Supabaseからエージェントのスコアとキャッシュ済みProofを取得
- * 2. オンチェーンのTrustScoreRegistry.verifyScore() で検証
- * 3. 結果を返す（verified / unverified / no_snapshot）
  */
-import { supabase } from '../lib/supabase.js';
+import { db } from '../lib/db.js';
 import { buildMerkleTree, getMerkleProof, verifyProof } from '../lib/merkle.js';
 
 export default async function handler({ wallet_address }) {
   const normalized = wallet_address.toLowerCase();
 
-  // エージェントのスコアを取得
-  const { data: agent, error } = await supabase
-    .from('mcp_agents')
-    .select('trust_score, updated_at')
-    .eq('wallet_address', normalized)
-    .single();
+  const { rows } = await db.query(
+    `SELECT trust_score, updated_at FROM mcp_agents WHERE wallet_address = $1`,
+    [normalized]
+  );
+  const agent = rows[0];
+  if (!agent) throw new Error(`エージェント ${wallet_address} が見つかりません`);
 
-  if (error || !agent) {
-    throw new Error(`エージェント ${wallet_address} が見つかりません`);
-  }
-
-  // 最新のスナップショットを取得
-  const { data: snapshot } = await supabase
-    .from('mcp_trust_snapshots')
-    .select('*')
-    .order('epoch', { ascending: false })
-    .limit(1)
-    .single();
+  const { rows: snapRows } = await db.query(
+    `SELECT * FROM mcp_merkle_commits ORDER BY committed_at DESC LIMIT 1`
+  );
+  const snapshot = snapRows[0] ?? null;
 
   if (!snapshot) {
     return {
-      wallet_address: normalized,
-      trust_score: agent.trust_score,
-      verification: 'no_snapshot',
-      message: 'オンチェーンスナップショットがまだ存在しません',
+      wallet_address: normalized, trust_score: agent.trust_score,
+      verification: 'no_snapshot', message: 'オンチェーンスナップショットがまだ存在しません',
     };
   }
 
-  // 全エージェントを取得してMerkle Treeを再構築
-  const { data: allAgents } = await supabase
-    .from('mcp_agents')
-    .select('wallet_address, trust_score')
-    .order('wallet_address');
-
-  const agents = (allAgents || []).map((a) => ({
-    wallet: a.wallet_address,
-    trustScore: a.trust_score,
-  }));
-
+  const { rows: allAgentRows } = await db.query(
+    `SELECT wallet_address, trust_score FROM mcp_agents ORDER BY wallet_address`
+  );
+  const agents = allAgentRows.map((a) => ({ wallet: a.wallet_address, trustScore: a.trust_score }));
   const { root, tree } = buildMerkleTree(agents);
 
-  // 対象エージェントのインデックスを特定
   const agentIndex = agents.findIndex((a) => a.wallet === normalized);
   if (agentIndex === -1) {
     return {
-      wallet_address: normalized,
-      trust_score: agent.trust_score,
-      verification: 'not_in_tree',
-      message: 'エージェントがMerkle Treeに含まれていません（スナップショット後に登録された可能性）',
+      wallet_address: normalized, trust_score: agent.trust_score,
+      verification: 'not_in_tree', message: 'エージェントがMerkle Treeに含まれていません',
     };
   }
 
-  // Proof生成
   const proof = getMerkleProof(tree, agentIndex);
-
-  // オフチェーン検証（オンチェーンのrootと比較）
   const offchainValid = verifyProof(snapshot.merkle_root, normalized, agent.trust_score, proof);
-
-  // スコアが最後のスナップショット以降に更新されたか
   const scoreUpdatedAfterSnapshot = new Date(agent.updated_at) > new Date(snapshot.committed_at);
 
   return {
-    wallet_address: normalized,
-    trust_score: agent.trust_score,
+    wallet_address: normalized, trust_score: agent.trust_score,
     verification: offchainValid ? 'verified' : 'unverified',
-    epoch: snapshot.epoch,
-    on_chain_root: snapshot.merkle_root,
-    computed_root: root,
-    roots_match: snapshot.merkle_root === root,
-    proof,
+    epoch: snapshot.committed_at, on_chain_root: snapshot.merkle_root, computed_root: root,
+    roots_match: snapshot.merkle_root === root, proof,
     score_updated_after_snapshot: scoreUpdatedAfterSnapshot,
     message: offchainValid
-      ? `trust_score ${agent.trust_score} はepoch ${snapshot.epoch} のオンチェーンMerkle Rootで検証済み`
+      ? `trust_score ${agent.trust_score} はオンチェーンMerkle Rootで検証済み`
       : scoreUpdatedAfterSnapshot
-        ? `スコアが最新スナップショット以降に更新されています（次回コミットで反映）`
-        : `検証失敗: スコアがオンチェーン記録と一致しません`,
+        ? 'スコアが最新スナップショット以降に更新されています（次回コミットで反映）'
+        : '検証失敗: スコアがオンチェーン記録と一致しません（改ざんの可能性）',
   };
 }

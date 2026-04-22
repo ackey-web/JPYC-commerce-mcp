@@ -1,11 +1,25 @@
 {
-  "name": "gifterra-commerce-mcp",
+  "name": "jpyc-commerce-mcp",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "migrate": "node scripts/migrate.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
-    "@modelcontextprotocol/sdk": "latest",
-    "@supabase/supabase-js": "latest",
-    "dotenv": "^17.4.0"
+    "@modelcontextprotocol/sdk": "^1.15.0",
+    "dotenv": "^17.4.0",
+    "ethers": "^6.13.0",
+    "merkletreejs": "^0.4.0",
+    "keccak256": "^1.0.6",
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }
