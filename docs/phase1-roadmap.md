@@ -234,6 +234,16 @@ IERC20(jpycToken).transfer(FEE_RECIPIENT, fee);
 IERC20(jpycToken).transfer(worker, reward - fee);
 ```
 
+**実装上の注意点**（v2.1 Fee Logic 実装経験より）:
+- `_distributePayout(uint64 jobId, uint128 amount, address worker)` の形で jobId を受け取り `ProtocolFeeDistributed(jobId, FEE_RECIPIENT, fee)` を emit する
+- `fee == 0`（amount < 10,000 wei の端数切り捨て）の場合は `FEE_RECIPIENT` への transfer をスキップし、`ProtocolFeeDistributed` も emit しない（不要な transfer をガス節約）
+- constructor で `FeeRecipientZero` カスタムエラー（revert with custom error）を使う（string revert より gas 安）
+- `deployBountyEscrow.js` は 3 引数対応（admin, jpyc, feeRecipient）、`BOUNTY_FEE_RECIPIENT_AMOY` / `BOUNTY_FEE_RECIPIENT_POLYGON` 環境変数を参照
+
+**v2.2 テスト追加目標**: v2.1 の 54 件 → v2.2 で 60 件以上
+- fee logic 5 件: `confirmDelivery` fee 分配 / `claimExpired` fee 分配 / `cancelBounty` fee なし / fee+worker 合計検証 / 1 wei 端数切り捨て（fee=0、全額 worker）
+- deployment 追加 1 件: `FEE_RECIPIENT` immutable 確認 + FeeRecipientZero revert
+
 ### DAO Gnosis Safe 構成（Phase 1+）
 
 ```
