@@ -345,26 +345,55 @@ Gas fees for all on-chain operations are paid by the end user via a pluggable re
 
 ## Operator Custody
 
-The maintainers of this project hold no funds, private keys, or relayer infrastructure. This is a pure software provider — the MCP server returns transaction calldata and EIP-712 typed data for users to sign with their own wallets. No party other than the end user ever has custody of JPYC, bounty escrows, or SBT mints.
+The maintainers hold no user funds or private keys directly. Maintainers participate as one signer (out of three) in the DAO Treasury multisig, but cannot unilaterally withdraw or redirect funds — any Treasury movement requires at least 2-of-3 independent signatures and is publicly auditable on-chain. The MCP server itself is a pure software provider; it returns transaction calldata and EIP-712 typed data for users to sign with their own wallets.
 
-See [Legal Disclaimer](#legal-disclaimer) → Non-Custodial Design for regulatory context.
+---
+
+## Protocol Fee
+
+A 0.1% protocol fee is automatically collected on every confirmed or auto-released bounty payout and routed immutably to a DAO-governed Treasury (Gnosis Safe multisig on Polygon). Maintainers do not receive fees directly.
+
+- Rate: `PROTOCOL_FEE_BPS = 10` (0.1%), declared as `immutable` in `BountyEscrow.sol`
+- Recipient: DAO Gnosis Safe (2-of-3 multisig)
+- Exemption: `cancelBounty` refunds the poster with **no fee deduction**
+- Changing the rate or recipient requires deploying a new contract version
+
+Fee use cases governed by the DAO:
+- Infrastructure costs
+- Contributor grants
+- Security audits
+- Ecosystem development
+
+---
+
+## DAO Treasury
+
+The protocol fee recipient is a Gnosis Safe multisig on Polygon, configured as **2-of-3** for Phase 0+:
+- 3 total signers (maintainer + community representatives)
+- Threshold: 2 signatures required for any movement
+- Maintainer holds 1 signer key; **cannot unilaterally access funds**
+- All Treasury movements require on-chain multisig signatures from at least 2 independent parties
+- All transactions are publicly auditable via Polygonscan
+
+Phase 1+ Roadmap: transition to token-based governance (DAO voting) once network adoption warrants formal governance.
 
 ---
 
 ## Funding Model
 
-JPYC Commerce MCP is currently funded by donations and grants. No protocol fees are collected in Phase 0+ — the `BountyEscrow` contract has `PROTOCOL_FEE_BPS = 0` as an immutable constant. Future phases may introduce DAO-governed fees, which would require deploying a new contract version.
-
-Current funding sources (planned / in progress):
+JPYC Commerce MCP is funded by:
+- **DAO Treasury**: 0.1% protocol fee on confirmed/auto-released bounties, governed by DAO multisig signers
 - Grant applications: Polygon Village, JPYC, Gitcoin, Ethereum Foundation
 - GitHub Sponsors (coming soon)
 - Enterprise support contracts (inquiries: [TBD])
+
+The DAO Treasury is the primary recurring funding source; fees are used for infrastructure, contributor grants, security audits, and ecosystem development. Maintainers do not receive fees directly.
 
 ---
 
 ## Pause Note
 
-While the contract is paused, new bounties, acceptances, submissions, and delivery confirmations are halted. The 48-hour timelock on pause activation provides users time to complete pending operations. `claimExpired` remains callable during pause to protect worker claims.
+While the contract is paused, new bounties, acceptances, submissions, delivery confirmations, and cancellations are halted. The 48-hour timelock on pause activation provides users time to complete pending operations. `claimExpired` remains callable during pause to protect worker claims.
 
 ---
 
