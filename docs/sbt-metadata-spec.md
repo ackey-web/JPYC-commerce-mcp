@@ -14,7 +14,7 @@ ERC-5192 準拠 TrustSBT の tokenURI が返す JSON メタデータの仕様書
     { "trait_type": "trust_score",          "value": 72,             "display_type": "number" },
     { "trait_type": "completion_count",     "value": 42,             "display_type": "number" },
     { "trait_type": "rank",                 "value": "Gold" },
-    { "trait_type": "auto_approve_limit",   "value": 2000,           "display_type": "number" },
+    { "trait_type": "auto_approve_limit",   "value": 100000,         "display_type": "number" },
     { "trait_type": "merkle_root",          "value": "0xabc123..." },
     { "trait_type": "merkle_epoch",         "value": 7,              "display_type": "number" },
     { "trait_type": "issued_at",            "value": 1745249780,     "display_type": "date" },
@@ -39,7 +39,7 @@ ERC-5192 準拠 TrustSBT の tokenURI が返す JSON メタデータの仕様書
 | `trust_score` | number | **0〜100 の整数スコア**（calculateTrustScore の出力を 100倍して丸め） |
 | `completion_count` | number | タスク完遂数（整数） |
 | `rank` | string | スコア帯によるランク（下記参照） |
-| `auto_approve_limit` | number | このランクで自動承認される JPYC 上限。Platinum は null（制限なし） |
+| `auto_approve_limit` | number | このランクで自動承認される JPYC 上限。env (`AUTO_APPROVE_LIMIT_*`) で上書き可能。Platinum も明示的キャップ必須（unlimited 禁止、リスク管理） |
 | `merkle_root` | string | 直近の Merkle Root（bytes32 hex、0x プレフィクス付き） |
 | `merkle_epoch` | number | Merkle Root のエポック番号（整数） |
 | `issued_at` | number | 最初の mint 時刻（UNIX timestamp） |
@@ -49,22 +49,28 @@ ERC-5192 準拠 TrustSBT の tokenURI が返す JSON メタデータの仕様書
 
 trust_score は calculateTrustScore の出力（0.0〜1.0）を 100倍した整数値で比較する。
 
-| ランク | trust_score 帯（整数） | 自動承認上限 | Rezona UI 表示 |
+| ランク | trust_score 帯（整数） | 自動承認上限（デフォルト） | Rezona UI 表示 |
 |---|---|---|---|
-| Bronze | 0〜29 | 100 JPYC/回 | 銅バッジ |
-| Silver | 30〜59 | 500 JPYC/回 | 銀バッジ |
-| Gold | 60〜99 | 2,000 JPYC/回 | 金バッジ + スポットライト演出 |
-| Platinum | 100 | 上限なし（人間承認のみ） | 白金バッジ + 専用入場SE |
+| Bronze | 0〜29 | 1,000 JPYC/回 (~$6.6) | 銅バッジ |
+| Silver | 30〜59 | 10,000 JPYC/回 (~$66) | 銀バッジ |
+| Gold | 60〜99 | 100,000 JPYC/回 (~$660) | 金バッジ + スポットライト演出 |
+| Platinum | 100 | 1,000,000 JPYC/回 (~$6,600、キャップ必須) | 白金バッジ + 専用入場SE |
+
+デフォルト値は env (`AUTO_APPROVE_LIMIT_{BRONZE,SILVER,GOLD,PLATINUM}`) で上書き可能。Platinum は旧仕様 `null`（unlimited）を廃止し、明示的キャップを強制（リスク管理）。
 
 ### ランク計算ロジック（lib/sbtClient.js の `computeRank` と共通）
 
 ```js
 function computeRank(trustScore) {
   const s = Math.round(trustScore * 100); // 0.72 → 72
-  if (s >= 100) return { rank: 'Platinum', autoApproveLimit: null };
-  if (s >= 60)  return { rank: 'Gold',     autoApproveLimit: 2000 };
-  if (s >= 30)  return { rank: 'Silver',   autoApproveLimit: 500 };
-  return              { rank: 'Bronze',    autoApproveLimit: 100 };
+  const BRONZE   = Number(process.env.AUTO_APPROVE_LIMIT_BRONZE)   || 1000;
+  const SILVER   = Number(process.env.AUTO_APPROVE_LIMIT_SILVER)   || 10000;
+  const GOLD     = Number(process.env.AUTO_APPROVE_LIMIT_GOLD)     || 100000;
+  const PLATINUM = Number(process.env.AUTO_APPROVE_LIMIT_PLATINUM) || 1000000;
+  if (s >= 100) return { rank: 'Platinum', autoApproveLimit: PLATINUM };
+  if (s >= 60)  return { rank: 'Gold',     autoApproveLimit: GOLD };
+  if (s >= 30)  return { rank: 'Silver',   autoApproveLimit: SILVER };
+  return              { rank: 'Bronze',    autoApproveLimit: BRONZE };
 }
 ```
 

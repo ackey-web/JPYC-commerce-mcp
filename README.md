@@ -221,12 +221,16 @@ Trust scores are recorded on-chain as **ERC-5192 non-transferable tokens** (Trus
 
 #### SBT Rank Tiers
 
+Default auto-approval limits (override via `AUTO_APPROVE_LIMIT_*` env vars; see `.env.example`). USD approximations at ~1 JPYC ≈ $0.0066.
+
+**Design note**: Platinum is capped (not unlimited) for risk management. Any transaction above a rank's limit routes through human approval regardless of tier.
+
 | Rank | trust_score | Auto-approval limit | Display |
 |------|-------------|---------------------|---------|
-| Bronze | 0–30 | 100 JPYC/tx | Bronze badge |
-| Silver | 30–60 | 500 JPYC/tx | Silver badge |
-| Gold | 60–100 | 2,000 JPYC/tx | Gold badge |
-| Platinum | 100+ | Human approval only | Platinum badge |
+| Bronze | 0–30 | 1,000 JPYC/tx (~$6.6) | Bronze badge |
+| Silver | 30–60 | 10,000 JPYC/tx (~$66) | Silver badge |
+| Gold | 60–100 | 100,000 JPYC/tx (~$660) | Gold badge |
+| Platinum | 100+ | 1,000,000 JPYC/tx (~$6,600) | Platinum badge |
 
 ---
 
@@ -296,12 +300,14 @@ Client signs EIP-712 typed data (off-chain, no gas)
 
 BountyEscrow uses trust score ranks to determine negotiation auto-approval thresholds. Higher-ranked workers can be auto-approved without human review for larger bounty amounts:
 
-| Rank | trust_score | Bounty auto-approval limit |
+| Rank | trust_score | Bounty auto-approval limit (default) |
 |---|---|---|
-| Bronze | 0–30 | 100 JPYC |
-| Silver | 30–60 | 500 JPYC |
-| Gold | 60–100 | 2,000 JPYC |
-| Platinum | 100+ | Human approval required |
+| Bronze | 0–30 | 1,000 JPYC |
+| Silver | 30–60 | 10,000 JPYC |
+| Gold | 60–100 | 100,000 JPYC |
+| Platinum | 100+ | 1,000,000 JPYC (capped, not unlimited) |
+
+Limits configurable via `AUTO_APPROVE_LIMIT_{BRONZE,SILVER,GOLD,PLATINUM}` env vars.
 
 For the full economic model including fee structure and anti-gaming design, see [`docs/ai-shopkeeper-bounty-economics.md`](docs/ai-shopkeeper-bounty-economics.md).
 
