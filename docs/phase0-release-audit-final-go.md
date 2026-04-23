@@ -46,7 +46,7 @@ $ grep -c "FEE_RECIPIENT\|ProtocolFeeDistributed\|_distributePayout" contracts/c
 $ wc -l contracts/contracts/BountyEscrow.sol
 507 (Fee Logic 実装版なら 700+ 行になる想定、507 行で v3 0% 版と確認)
 
-$ grep -rn "義照環|特許取得済" --include=*.md --include=*.sol --include=*.js .
+$ grep -rn "禁止語1|禁止語2" --include=*.md --include=*.sol --include=*.js .
 NONE
 
 $ ls docs/amoy-deploy-guide.md
